@@ -197,7 +197,13 @@
             const id = mySnakeIds[1];
             if (!last || !id) return null;
             const snake = last.snakes.find(s => s.id === id);
-            if (!snake || snake.segments.length < 2) return null;
+            if (!snake) return null;
+            // Bevorzugt den exakten, vom Server mitgesendeten Blickwinkel
+            // (snake.angle) statt ihn aus den ausgedünnten Body-Segmenten zu
+            // schätzen - letzteres war ungenau/verrauscht und führte trotz
+            // Hysterese noch zu sichtbarem Zickzack-Drehen.
+            if (typeof snake.angle === "number") return snake.angle;
+            if (!snake.segments || snake.segments.length < 2) return null;
             const head = snake.segments[0], neck = snake.segments[1];
             return Math.atan2(head[1] - neck[1], head[0] - neck[0]);
         }

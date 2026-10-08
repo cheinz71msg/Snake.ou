@@ -442,6 +442,7 @@ public class GameEngine {
             m.put("slot", s.playerSlot);
             m.put("length", Math.round(s.length));
             m.put("shielded", s.isSpawnProtected());
+            m.put("angle", Math.round(s.angle * 1000.0) / 1000.0);
             List<double[]> segs = new ArrayList<>();
             for (Vector2 p : s.cachedBody) {
                 segs.add(new double[]{Math.round(p.x * 10) / 10.0, Math.round(p.y * 10) / 10.0});

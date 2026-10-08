@@ -384,10 +384,13 @@ vollständig unsichtbar/inaktiv bleibt:
   Blickrichtung der eigenen Schlange aus den letzten zwei Körpersegmenten
   des letzten Zustands-Snapshots (`Renderer.lastState`) berechnet und mit
   `desiredAngle` verglichen, um `turn` (-1/0/1) abzuleiten - dieselbe
-  Vergleichslogik wie `AiController.turnTowards()` auf dem Server, nur
-  clientseitig für die eigene Steuerung nachgebildet. Dabei kommt ein
-  **Schmitt-Trigger mit zwei Schwellen** statt einer einzelnen Deadzone zum
-  Einsatz (`TURN_START_THRESHOLD = 0.28` rad zum (Wieder-)Anfahren,
+  Vergleichslogik wie `AiController.turnTowards()` auf dem Server. Die
+  aktuelle Blickrichtung wird dabei direkt aus dem vom Server im
+  Zustands-Snapshot mitgesendeten `angle`-Feld gelesen (nicht mehr aus den
+  ausgedünnten Body-Segmenten geschätzt - diese Schätzung war verrauscht
+  und verzögert genug, um trotz Hysterese noch sichtbares Zickzack-Drehen
+  zu verursachen). Dabei kommt ein **Schmitt-Trigger mit zwei Schwellen**
+  statt einer einzelnen Deadzone zum Einsatz (`TURN_START_THRESHOLD = 0.28` rad zum (Wieder-)Anfahren,
   `TURN_STOP_THRESHOLD = 0.08` rad zum Anhalten): Eine einzelne, enge
   Deadzone führte dazu, dass die Schlange ständig hin- und herpendelte, da
   der tatsächlich pro Korrekturintervall gedrehte Winkel (abhängig von
@@ -509,8 +512,11 @@ Endpoint: `/ws/game` (SockJS, `setAllowedOriginPatterns("*")`).
 **`state.snakes[]`** Einträge: `id`, `name`, `color` (Kopf-Hex), `color2`
 (Schwanz-Hex), `slot` (Integer oder `null` bei KI), `length` (gerundet),
 `shielded` (bool, true während des Spawn-Schutzes, siehe Abschnitt 4.3),
-`segments` (Array aus `[x, y]`-Paaren, ausgedünnter Körper, neuester/
-Kopf-Punkt zuerst, Koordinaten auf eine Nachkommastelle gerundet).
+`angle` (aktueller Blickwinkel im Bogenmaß, 3 Nachkommastellen, siehe
+Abschnitt 4.7 - exakter Server-Wert statt einer clientseitigen Schätzung
+aus den Body-Segmenten), `segments` (Array aus `[x, y]`-Paaren,
+ausgedünnter Körper, neuester/Kopf-Punkt zuerst, Koordinaten auf eine
+Nachkommastelle gerundet).
 
 **`state.food[]`** Einträge: `x`, `y`, `r` (Radius), `c` (Farbe, Hex).
 
