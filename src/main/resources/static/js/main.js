@@ -202,6 +202,18 @@
             return Math.atan2(head[1] - neck[1], head[0] - neck[0]);
         }
 
+        // Schmitt-Trigger-Schwellenwerte statt eines einzelnen Deadzone-Werts:
+        // Verhindert das Hin-und-Her-Zittern, das entsteht, wenn die pro
+        // Korrekturintervall tatsächlich gedrehte Winkelmenge (abhängig von
+        // TURN_RATE_DEG_PER_SEC und der Broadcast-Verzögerung) größer ist als
+        // die Deadzone selbst: Ohne Hysterese überschießt jede Korrektur über
+        // die Deadzone hinaus, wird im nächsten Intervall erkannt und wieder
+        // zurückgedreht -> endloses Pendeln. Mit zwei Schwellen (eng zum
+        // Stoppen, weit zum erneuten Anfahren) bleibt die Schlange ruhig,
+        // sobald sie grob auf Kurs ist.
+        const TURN_STOP_THRESHOLD = 0.08;   // rad - unterhalb dessen wird angehalten
+        const TURN_START_THRESHOLD = 0.28;  // rad - oberhalb dessen wird (wieder) gedreht
+
         function startSteerLoop() {
             if (steerTimer) return;
             steerTimer = setInterval(() => {
@@ -211,7 +223,21 @@
                 let diff = desiredAngle - currentAngle;
                 while (diff > Math.PI) diff -= 2 * Math.PI;
                 while (diff < -Math.PI) diff += 2 * Math.PI;
-                state.turn = Math.abs(diff) < 0.08 ? 0 : (diff > 0 ? 1 : -1);
+                const absDiff = Math.abs(diff);
+                if (state.turn === 0) {
+                    // steht still -> erst ab der weiten Schwelle wieder lenken
+                    if (absDiff >= TURN_START_THRESHOLD) {
+                        state.turn = diff > 0 ? 1 : -1;
+                    }
+                } else {
+                    // dreht bereits -> erst ab der engen Schwelle anhalten,
+                    // bis dahin ggf. Richtung an aktuelle Abweichung anpassen
+                    if (absDiff < TURN_STOP_THRESHOLD) {
+                        state.turn = 0;
+                    } else {
+                        state.turn = diff > 0 ? 1 : -1;
+                    }
+                }
                 sendState();
             }, 60);
         }

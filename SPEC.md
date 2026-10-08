@@ -385,7 +385,17 @@ vollständig unsichtbar/inaktiv bleibt:
   des letzten Zustands-Snapshots (`Renderer.lastState`) berechnet und mit
   `desiredAngle` verglichen, um `turn` (-1/0/1) abzuleiten - dieselbe
   Vergleichslogik wie `AiController.turnTowards()` auf dem Server, nur
-  clientseitig für die eigene Steuerung nachgebildet.
+  clientseitig für die eigene Steuerung nachgebildet. Dabei kommt ein
+  **Schmitt-Trigger mit zwei Schwellen** statt einer einzelnen Deadzone zum
+  Einsatz (`TURN_START_THRESHOLD = 0.28` rad zum (Wieder-)Anfahren,
+  `TURN_STOP_THRESHOLD = 0.08` rad zum Anhalten): Eine einzelne, enge
+  Deadzone führte dazu, dass die Schlange ständig hin- und herpendelte, da
+  der tatsächlich pro Korrekturintervall gedrehte Winkel (abhängig von
+  `TURN_RATE_DEG_PER_SEC` und der Broadcast-Verzögerung) größer war als die
+  Deadzone selbst - jede Korrektur schoss über das Ziel hinaus und wurde im
+  nächsten Intervall wieder zurückgedreht. Mit der weiten Start- und der
+  engen Stop-Schwelle bleibt die Schlange ruhig, sobald sie grob auf Kurs
+  ist, und lenkt erst bei spürbarer Abweichung erneut.
 - **Boost-Knopf** (`#touchBoostBtn`, unten rechts, „⚡“): `touchstart`
   setzt `boost = true`, `touchend`/`touchcancel` setzt ihn zurück auf
   `false`. Visuelles Feedback über die CSS-Klasse `.active`.
