@@ -51,6 +51,17 @@ public final class GameConfig {
     public static final int LEADERBOARD_SIZE = 10;
 
     /**
+     * Abstand (in Welt-Einheiten) zwischen den Punkten des ausgedünnten
+     * Körpers, der für Kollision, KI-Ausweichlogik und Darstellung verwendet
+     * wird. Ein einziger gemeinsamer Wert ermöglicht es, den Körper pro Tick
+     * nur einmal zu berechnen und das Ergebnis mehrfach wiederzuverwenden.
+     */
+    public static final double BODY_SAMPLE_SPACING = SNAKE_RADIUS * 1.5;
+
+    /** Wie viele Snapshots pro Sekunde an die Clients gesendet werden (<= TICK_RATE). */
+    public static final int BROADCAST_RATE = 15;
+
+    /**
      * Wie viele "Nacken"-Punkte ab dem Kopf von der Selbstkollisionsprüfung
      * ausgenommen werden, damit die Schlange sich nicht sofort selbst "beißt".
      */

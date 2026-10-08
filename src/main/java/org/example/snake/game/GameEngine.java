@@ -116,6 +116,10 @@ public class GameEngine {
 
     /** Führt einen Simulationsschritt aus. */
     public synchronized void tick(double dt) {
+        // Körper-Cache für KI-Ausweichlogik auf Basis der Positionen VOR
+        // dieser Bewegung aktualisieren (entspricht dem bisherigen Verhalten).
+        refreshBodyCache();
+
         // 1. KI-Eingaben berechnen
         for (Snake s : snakes.values()) {
             if (s.alive && !s.isPlayer()) {
@@ -129,6 +133,10 @@ public class GameEngine {
                 s.advance(dt);
             }
         }
+
+        // Körper-Cache nach der Bewegung neu berechnen, damit Kollision,
+        // Futter-Check und Broadcast die aktuellen Positionen verwenden.
+        refreshBodyCache();
 
         // 3. Kartenrand-Kollision
         for (Snake s : snakes.values()) {
@@ -150,7 +158,7 @@ public class GameEngine {
             boolean dead = false;
             for (Snake other : snakes.values()) {
                 if (!other.alive || other == s) continue;
-                List<Vector2> body = other.sampledBody(GameConfig.SNAKE_RADIUS * 1.5);
+                List<Vector2> body = other.cachedBody;
                 for (int i = 1; i < body.size(); i++) {
                     if (head.distanceTo(body.get(i)) < collisionDist) {
                         dead = true;
@@ -161,6 +169,7 @@ public class GameEngine {
             }
             if (dead) toKill.add(s);
         }
+
 
         // 5. Futter essen
         double eatDist = GameConfig.SNAKE_RADIUS + GameConfig.FOOD_RADIUS;
@@ -226,6 +235,15 @@ public class GameEngine {
         }
     }
 
+    /** Berechnet den ausgedünnten Körper jeder lebenden Schlange einmal und speichert ihn zwischen. */
+    private void refreshBodyCache() {
+        for (Snake s : snakes.values()) {
+            if (s.alive) {
+                s.cachedBody = s.sampledBody(GameConfig.BODY_SAMPLE_SPACING);
+            }
+        }
+    }
+
     private void spawnFood() {
         String id = UUID.randomUUID().toString();
         Vector2 pos = new Vector2(random.nextDouble() * GameConfig.MAP_WIDTH, random.nextDouble() * GameConfig.MAP_HEIGHT);
@@ -258,7 +276,7 @@ public class GameEngine {
             m.put("slot", s.playerSlot);
             m.put("length", Math.round(s.length));
             List<double[]> segs = new ArrayList<>();
-            for (Vector2 p : s.sampledBody(GameConfig.SNAKE_RADIUS * 1.4)) {
+            for (Vector2 p : s.cachedBody) {
                 segs.add(new double[]{Math.round(p.x * 10) / 10.0, Math.round(p.y * 10) / 10.0});
             }
             m.put("segments", segs);

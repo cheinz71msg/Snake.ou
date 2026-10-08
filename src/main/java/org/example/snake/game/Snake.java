@@ -45,6 +45,15 @@ public class Snake {
     public double length;
     public boolean alive = true;
 
+    /**
+     * Zwischengespeicherter, ausgedünnter Körper (siehe {@link #sampledBody}).
+     * Wird von der GameEngine einmal pro Tick aktualisiert und dann mehrfach
+     * (Kollisionsprüfung, KI-Ausweichlogik, Zustands-Snapshot) wiederverwendet,
+     * statt den rohen Pfad jedes Mal neu abzutasten - das war zuvor der
+     * größte CPU-Fresser bei vielen Schlangen.
+     */
+    public List<Vector2> cachedBody = List.of();
+
     /** Pfad der Kopfposition, neuester Punkt zuerst. */
     private final Deque<Vector2> path = new ArrayDeque<>();
     private double pathArcLength = 0.0;

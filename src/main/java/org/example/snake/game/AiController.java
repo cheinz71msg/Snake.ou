@@ -87,7 +87,7 @@ public class AiController {
             // ungefährlich -> die KI muss ihm nicht mehr ausweichen (das hat
             // zuvor bei langen, aufgerollten Schlangen zu Endlos-Kreisen geführt).
             if (!other.alive || other == snake) continue;
-            List<Vector2> body = other.sampledBody(GameConfig.SNAKE_RADIUS * 2);
+            List<Vector2> body = other.cachedBody;
             for (int i = 0; i < body.size(); i++) {
                 if (ahead.distanceTo(body.get(i)) < dangerRadius) {
                     // Teste, ob links oder rechts freier ist
@@ -110,7 +110,7 @@ public class AiController {
         double min = Double.MAX_VALUE;
         for (Snake s : engine.getSnakes().values()) {
             if (!s.alive || s == self) continue;
-            for (Vector2 p : s.sampledBody(GameConfig.SNAKE_RADIUS * 2)) {
+            for (Vector2 p : s.cachedBody) {
                 double d = point.distanceTo(p);
                 if (d < min) min = d;
             }

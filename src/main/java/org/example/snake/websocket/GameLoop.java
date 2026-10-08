@@ -23,11 +23,25 @@ public class GameLoop {
     @Autowired
     private GameWebSocketHandler webSocketHandler;
 
+    // Jeder wievielte Tick tatsächlich an die Clients gesendet wird. Die
+    // Physik läuft weiterhin mit voller TICK_RATE (reaktionsschnelle Steuerung
+    // und Kollisionen), aber nicht jeder Tick muss auch über das Netzwerk
+    // geschickt werden - das spart auf schwächeren Servern spürbar CPU- und
+    // Bandbreiten-Last. Die Client-seitige Interpolation gleicht die
+    // niedrigere Sende-Rate visuell wieder aus.
+    private static final int BROADCAST_EVERY_N_TICKS =
+            Math.max(1, GameConfig.TICK_RATE / GameConfig.BROADCAST_RATE);
+    private int tickCounter = 0;
+
     @Scheduled(fixedRate = 1000 / GameConfig.TICK_RATE)
     public void loop() {
         gameEngine.tick(GameConfig.TICK_INTERVAL_SECONDS);
 
-        webSocketHandler.broadcast(gameEngine.buildStateSnapshot());
+        tickCounter++;
+        if (tickCounter >= BROADCAST_EVERY_N_TICKS) {
+            tickCounter = 0;
+            webSocketHandler.broadcast(gameEngine.buildStateSnapshot());
+        }
 
         List<GameEngine.DeathEvent> deaths = gameEngine.drainDeathEvents();
         for (GameEngine.DeathEvent event : deaths) {
