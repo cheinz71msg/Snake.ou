@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Snake</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+<!-- ===================== HAUPTMENÜ ===================== -->
+<section id="menu" class="screen">
+    <div class="menu-bg"></div>
+    <div class="menu-box">
+        <h1><span class="logo-emoji">🐍</span> Snake</h1>
+        <p class="subtitle">Friss Obst, werde riesig, überlebe!</p>
+
+        <label class="field">
+            Dein Name
+            <input id="nameP1" type="text" maxlength="14" placeholder="Spieler"/>
+        </label>
+
+        <div class="field">
+            <span class="field-label">Skin wählen</span>
+            <div id="skinPicker" class="skin-picker"></div>
+        </div>
+
+        <button id="playBtn" class="primary-btn">▶ Play</button>
+        <p id="connectStatus" class="status-text"></p>
+
+        <div class="controls-help">
+            <h3>Steuerung</h3>
+            <p>Pfeiltasten oder WASD zum Drehen · ↑ / W zum Boosten</p>
+        </div>
+    </div>
+</section>
+
+<!-- ===================== SPIEL ===================== -->
+<section id="gameScreen" class="screen" hidden>
+    <canvas id="gameCanvas"></canvas>
+
+    <canvas id="minimap"></canvas>
+
+    <div id="leaderboard" class="panel">
+        <h3>🏆 Bestenliste</h3>
+        <ol id="leaderboardList"></ol>
+    </div>
+
+    <div id="hud" class="panel hud">
+        <span id="hudP1">Länge: 0</span>
+    </div>
+
+    <button id="muteBtn" class="icon-btn" title="Ton an/aus">🔊</button>
+
+    <div id="gameOverP1" class="overlay" hidden>
+        <div class="overlay-box">
+            <h2>Game Over</h2>
+            <p id="gameOverP1Text"></p>
+            <button class="primary-btn back-to-menu">Zurück zum Menü</button>
+        </div>
+    </div>
+</section>
+
+<script src="js/libs/sockjs.min.js"></script>
+<script src="js/skins.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/network.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

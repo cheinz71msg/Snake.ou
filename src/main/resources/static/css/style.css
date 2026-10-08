@@ -1,0 +1,347 @@
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Segoe UI", Verdana, sans-serif;
+    background: #0b1220;
+    color: #eef2ff;
+}
+
+.screen {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+}
+
+/* Globale Absicherung: egal welche Elemente "display" per ID/Klasse setzen,
+   das hidden-Attribut muss immer gewinnen (betrifft auch die Overlays). */
+[hidden] {
+    display: none !important;
+}
+
+/* ---------------- Menü ---------------- */
+#menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 30%, #1b2a4a 0%, #0b1220 70%);
+    overflow: hidden;
+}
+
+.menu-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+        radial-gradient(circle at 15% 20%, rgba(55, 214, 122, 0.12), transparent 40%),
+        radial-gradient(circle at 85% 75%, rgba(79, 140, 255, 0.14), transparent 45%),
+        radial-gradient(circle at 50% 100%, rgba(255, 170, 60, 0.08), transparent 50%);
+    animation: bgDrift 18s ease-in-out infinite alternate;
+}
+
+@keyframes bgDrift {
+    from { transform: scale(1) translate(0, 0); }
+    to { transform: scale(1.15) translate(-2%, -2%); }
+}
+
+.menu-box {
+    position: relative;
+    z-index: 1;
+    background: rgba(18, 26, 46, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 18px;
+    padding: 36px 44px;
+    width: 420px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+}
+
+.menu-box h1 {
+    margin: 0 0 4px;
+    font-size: 34px;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #37d67a, #4f8cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.logo-emoji {
+    -webkit-text-fill-color: initial;
+}
+
+.subtitle {
+    color: #9fb3d9;
+    margin-top: 0;
+}
+
+.field {
+    display: block;
+    text-align: left;
+    margin: 16px 0 0;
+    font-size: 14px;
+    color: #c7d2e8;
+}
+
+.field-label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.field input[type="text"] {
+    width: 100%;
+    margin-top: 4px;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid #334066;
+    background: #121a2e;
+    color: #eef2ff;
+    font-size: 15px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field input[type="text"]:focus {
+    outline: none;
+    border-color: #37d67a;
+    box-shadow: 0 0 0 3px rgba(55, 214, 122, 0.25);
+}
+
+.skin-picker {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+}
+
+.skin-swatch {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    padding: 0;
+}
+
+.skin-swatch:hover {
+    transform: scale(1.12);
+}
+
+.skin-swatch.selected {
+    border-color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3), 0 0 16px rgba(255, 255, 255, 0.4);
+    transform: scale(1.12);
+}
+
+.checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 14px;
+    color: #c7d2e8;
+    cursor: pointer;
+}
+
+.primary-btn {
+    margin-top: 24px;
+    width: 100%;
+    padding: 15px;
+    font-size: 18px;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #37d67a, #22a560);
+    color: #06230f;
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.15s ease;
+    box-shadow: 0 6px 18px rgba(55, 214, 122, 0.35);
+}
+
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(55, 214, 122, 0.45);
+}
+
+.primary-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+    transform: none;
+}
+
+.status-text {
+    margin: 10px 0 0;
+    font-size: 13px;
+    min-height: 16px;
+    color: #ff8080;
+}
+
+.controls-help {
+    margin-top: 24px;
+    text-align: left;
+    font-size: 13px;
+    color: #8fa3cc;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 14px;
+}
+
+.controls-help h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: #c7d2e8;
+}
+
+.controls-help p {
+    margin: 4px 0;
+}
+
+/* ---------------- Spiel ---------------- */
+#gameScreen {
+    background: #060b16;
+}
+
+#gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#minimap {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 180px;
+    height: 180px;
+    background: rgba(10, 16, 32, 0.75);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+}
+
+.panel {
+    position: absolute;
+    background: rgba(12, 18, 36, 0.68);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 14px 18px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+#leaderboard {
+    top: 16px;
+    left: 16px;
+    min-width: 200px;
+}
+
+#leaderboard h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    color: #c7d2e8;
+}
+
+#leaderboardList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+#leaderboardList li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+}
+
+#leaderboardList .rank {
+    width: 22px;
+    text-align: center;
+    color: #8fa3cc;
+    font-weight: bold;
+}
+
+#leaderboardList .lb-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#leaderboardList .lb-len {
+    color: #9fb3d9;
+    font-variant-numeric: tabular-nums;
+}
+
+#leaderboardList li.me {
+    color: #37d67a;
+    font-weight: bold;
+}
+
+#leaderboardList li.me .lb-len,
+#leaderboardList li.me .rank {
+    color: #37d67a;
+}
+
+.hud {
+    bottom: 16px;
+    left: 16px;
+    display: flex;
+    gap: 18px;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.icon-btn {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(12, 18, 36, 0.75);
+    color: #eef2ff;
+    font-size: 20px;
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.15s ease;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.icon-btn:hover {
+    transform: scale(1.08);
+    background: rgba(20, 30, 54, 0.9);
+}
+
+.overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.overlay-box {
+    background: #121a2e;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 32px 44px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.overlay-box h2 {
+    margin-top: 0;
+    color: #ff6b6b;
+}

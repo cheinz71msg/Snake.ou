@@ -1,0 +1,12 @@
+# Render "Blueprint" - wird automatisch erkannt, wenn ihr dieses Repo bei
+# Render.com als "New + Blueprint" verbindet. Spart das manuelle Ausfüllen
+# der Einstellungen.
+services:
+  - type: web
+    name: snake-game
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8080
