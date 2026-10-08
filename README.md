@@ -1,6 +1,12 @@
 # Snake.ou
 Browserbasiertes Multiplayer-Snake-Spiel im Stil von Wormate.io.
 
+> 📋 **Vollständige Spezifikation**: Siehe [`SPEC.md`](SPEC.md) für Architektur,
+> Spielregeln, Netzwerkprotokoll, Konfiguration und bekannte Fallstricke.
+> **Wichtig**: Bei jeder funktional relevanten Codeänderung muss `SPEC.md`
+> im selben Zug mit aktualisiert werden - sie ist die maßgebliche,
+> lebende Dokumentation dieses Projekts.
+
 ## Technik
 - **Backend**: Java 17, Spring Boot, WebSocket (Spiel-Loop mit 30 Ticks/Sekunde)
 - **Frontend**: Vanilla JavaScript, HTML5 Canvas, Web Audio API
