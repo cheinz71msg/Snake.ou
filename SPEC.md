@@ -200,13 +200,27 @@ Client einfach nur den letzten Snapshot zeichnen würde. Stattdessen:
 - Berührt der Kopf ein Futter-Objekt (Abstand < `SNAKE_RADIUS +
   FOOD_RADIUS`), wird das Futter entfernt und `length` um
   `GROWTH_PER_FOOD` erhöht.
-- Die Karte hält durchgehend mindestens `FOOD_TARGET_COUNT` Futter-Objekte
-  vor (nach jedem Tick wird bei Bedarf nachgefüllt).
+- Die Karte hält durchgehend eine Futtermenge zwischen `FOOD_TARGET_COUNT`
+  (Minimum, wird nach jedem Tick bei Bedarf nachgefüllt) und
+  `FOOD_MAX_COUNT` (Maximum, überschüssiges Futter wird abgebaut) vor
+  (`GameEngine.replenishFood()`, siehe Abschnitt 8.5).
+- Neues Futter wird **nicht rein zufällig**, sondern **gleichverteilt**
+  gespawnt: Die Karte wird gedanklich in ein Gitter aus Zellen der Größe
+  `FOOD_GRID_CELL_SIZE` eingeteilt, die aktuelle Futter-Belegung pro Zelle
+  gezählt, und die neue Position zufällig innerhalb einer der am
+  dünnsten besetzten Zellen gewählt (`GameEngine.pickEvenlyDistributedPosition()`).
+  Das verhindert, dass sich Futter dauerhaft an einzelnen Stellen klumpt.
 
 ### 4.3 Kollision
 
 - **Kartenrand**: Verlässt der Kopf das Rechteck `[0, MAP_WIDTH] x [0,
-  MAP_HEIGHT]`, stirbt die Schlange sofort.
+  MAP_HEIGHT]`, stirbt die Schlange. Der Wand-Tod läuft über **dieselbe
+  `toKill`-Pipeline** wie Schlangen-Kollisionen (siehe unten): Es wird ein
+  `DeathEvent` erzeugt (→ Game-Over-Anzeige beim Client), Futter wird aus dem
+  Körper gestreut, und die Schlange wird aus der Karte entfernt. (Historischer
+  Bug: Wand-Tod setzte früher nur `alive = false` direkt, ohne über die
+  `toKill`-Liste zu laufen - dadurch wurde nie ein `DeathEvent` gesendet und
+  der Client zeigte keinen Game-Over-Bildschirm an, siehe Abschnitt 8.5.)
 - **Andere Schlangen**: Eine Schlange stirbt, wenn ihr **Kopf** näher als
   `SNAKE_RADIUS * 1.7` an einem Körperpunkt (ab Index 1, also nicht am
   gegnerischen Kopf selbst beginnend) **einer anderen** Schlange ist.
@@ -219,15 +233,21 @@ Client einfach nur den letzten Snapshot zeichnen würde. Stattdessen:
 - Stirbt eine Schlange, werden aus bis zu 40 Punkten ihres (gröberen,
   `SNAKE_RADIUS * 3` Abstand) Körperpfads neue Futter-Objekte erzeugt
   (`scatterFoodFromSnake`) - andere Schlangen können die „Überreste“
-  fressen.
+  fressen. Die Anzahl der gestreuten Punkte wird zusätzlich auf die unter
+  `FOOD_MAX_COUNT` noch verbleibende Kapazität begrenzt, damit viele
+  gleichzeitige Tode (z. B. mehrere KI-Schlangen) die Karte nicht dauerhaft
+  mit Futter überfluten.
 
 ### 4.4 KI-Schlangen (Computer-Gegner)
 
 Eine einzige, zustandslose `AiController`-Instanz wird für **alle**
 KI-Schlangen verwendet; aller Zustand (Wander-Timer, Wander-Richtung,
-„befindet sich gerade in Wand-Ausweich-Modus“) liegt **pro Schlange** auf
+„befindet sich gerade in Wand-Ausweich-Modus“, Futter-Fortschritts-Tracking,
+Futter-Sperrliste, „Ausbruchs“-Zustand) liegt **pro Schlange** auf
 dem jeweiligen `Snake`-Objekt (`aiWanderTimer`, `aiWanderTurn`,
-`aiAvoidingWall`), **nicht** im Controller selbst. (Historischer Bug:
+`aiAvoidingWall`, `aiTargetFoodId`, `aiTargetBestDist`, `aiTargetStuckTimer`,
+`aiBlacklistFoodId`, `aiBlacklistTimer`, `aiBreakFreeTimer`,
+`aiBreakFreeDir`), **nicht** im Controller selbst. (Historischer Bug:
 Zustand lag ursprünglich im Controller und wurde von allen Schlangen
 gemeinsam genutzt, was zu synchronisiertem Fehlverhalten führte - siehe
 Abschnitt 8.3.)
@@ -240,16 +260,39 @@ gewinnt, siehe `AiController.update()`):
    `boosting` deaktiviert. Einmal ausgelöst, bleibt der „Ausweichmodus“
    aktiv, bis der Abstand zum Rand wieder > 420 Einheiten ist (verhindert
    Flackern/Kreisen exakt an der Auslöseschwelle).
-2. **Andere Schlangen direkt voraus**: Ein Punkt 130 Einheiten vor dem
-   Kopf wird gegen die (zwischengespeicherten) Körper **anderer**
-   Schlangen geprüft (Gefahrenradius `SNAKE_RADIUS * 3`). Bei Gefahr wird
-   geprüft, ob links oder rechts (±45°) mehr Abstand zum nächsten
-   fremden Körper besteht, und in die freiere Richtung gelenkt. **Der
-   eigene Körper wird hierbei explizit ignoriert** (seit Deaktivierung der
-   Selbstkollision ist er ungefährlich - andernfalls würde sich die KI
-   selbst „einkreisen“ und endlos im Kreis drehen, siehe Abschnitt 8.3).
-3. **Futter-Suche**: Nächstgelegenes Futter im Umkreis von 900 Einheiten
-   wird direkt angesteuert.
+2. **Andere Schlangen auf dem Weg voraus**: Mehrere Prüfstrahlen (0°, ±0.2
+   rad, ±0.45 rad relativ zur Blickrichtung) werden bis zu einem
+   geschwindigkeitsabhängigen Vorschauabstand
+   (`max(AI_AVOID_LOOKAHEAD_MIN, aktuelleGeschwindigkeit * AI_AVOID_LOOKAHEAD_SECONDS)`)
+   gegen die (zwischengespeicherten) Körper **anderer** Schlangen geprüft -
+   und zwar jeweils als **Abstand zur gesamten Strecke** Kopf→Vorschaupunkt
+   (`Vector2.distanceToSegment`), nicht nur zum Vorschau-Endpunkt
+   (Gefahrenradius `AI_AVOID_DANGER_RADIUS`). Bei Gefahr wird geprüft, ob
+   links oder rechts (±45°) mehr Abstand zum nächsten fremden Körper
+   besteht, und in die freiere Richtung gelenkt. **Der eigene Körper wird
+   hierbei explizit ignoriert** (seit Deaktivierung der Selbstkollision ist
+   er ungefährlich - andernfalls würde sich die KI selbst „einkreisen“ und
+   endlos im Kreis drehen, siehe Abschnitt 8.3). Historischer Bug: Die
+   ursprüngliche Version prüfte nur einen einzigen, festen Punkt exakt 130
+   Einheiten voraus gegen reine Punkt-zu-Punkt-Abstände - dadurch wurden
+   Hindernisse übersehen, die näher am Kopf lagen, leicht seitlich der
+   Blickrichtung waren, oder zwischen Kopf und Vorschaupunkt lagen, ohne
+   genau am Vorschaupunkt selbst zu sein (siehe Abschnitt 8.5).
+3. **Futter-Suche mit Kreisbewegungs-Erkennung**: Nächstgelegenes Futter im
+   Umkreis von 900 Einheiten (das nicht aktuell gesperrt ist, s. u.) wird
+   direkt angesteuert. Pro Tick wird verglichen, ob sich der Abstand zum
+   aktuell anvisierten Futter gegenüber dem bisher besten erreichten Abstand
+   spürbar verringert (`aiTargetBestDist`, Toleranz 1.5 Einheiten). Bleibt
+   diese Verbesserung über `AI_FOOD_STUCK_SECONDS` (1.8 s) aus, gilt die
+   Schlange als „feststeckend“ (sie kreist vermutlich endlos um das Futter,
+   weil ihr Kurvenradius bei der aktuellen Geschwindigkeit zu groß ist): Das
+   Futter wird für `AI_FOOD_BLACKLIST_SECONDS` (4 s) gesperrt
+   (`aiBlacklistFoodId`) und für `AI_BREAK_FREE_SECONDS` (1.0 s) lenkt die
+   Schlange bewusst und geboostet in eine feste, einmal gewürfelte Richtung
+   (`aiBreakFreeDir`), um aus der Kreisbewegung auszubrechen, bevor sie
+   wieder normal nach Futter sucht. (Historischer Bug: Es gab keinerlei
+   Fortschritts-Überwachung, wodurch KI-Schlangen bei ungünstiger Geometrie
+   endlos um ein Futter-Objekt kreisen konnten, siehe Abschnitt 8.5.)
 4. **Wandern**: Ist nichts davon zutreffend, wird alle 0.8-2.0 Sekunden neu
    gewürfelt: 55 % Wahrscheinlichkeit geradeaus, je 22.5 % leicht links/
    rechts. Dadurch bewegt sich die KI überwiegend geradlinig mit
@@ -300,7 +343,9 @@ Bewegung") ist i. d. R. **nur diese Datei** anzupassen.
 | `MAX_SNAKES` | 20 | Maximale gleichzeitige Schlangen (Spieler + KI) |
 | `TICK_RATE` | 30 | Physik-Simulationsschritte pro Sekunde |
 | `TICK_INTERVAL_SECONDS` | 1/TICK_RATE | Abgeleitet, `dt` pro Tick |
-| `FOOD_TARGET_COUNT` | 350 | Mindestanzahl Futter-Objekte auf der Karte |
+| `FOOD_TARGET_COUNT` | 350 | Mindestanzahl Futter-Objekte auf der Karte (Nachfüll-Untergrenze) |
+| `FOOD_MAX_COUNT` | 450 | Maximale Futter-Objekte auf der Karte (Obergrenze, überschüssiges Futter wird abgebaut) |
+| `FOOD_GRID_CELL_SIZE` | 400.0 | Zellgröße des Gitters für die gleichverteilte Futter-Spawn-Auswahl |
 | `BASE_SPEED` | 95.0 | Grundgeschwindigkeit (Welt-Einheiten/Sekunde) |
 | `BOOST_MULTIPLIER` | 1.8 | Geschwindigkeitsfaktor beim Boosten |
 | `TURN_RATE_DEG_PER_SEC` | 220.0 | Maximale Drehgeschwindigkeit |
@@ -312,6 +357,12 @@ Bewegung") ist i. d. R. **nur diese Datei** anzupassen.
 | `BODY_SAMPLE_SPACING` | `SNAKE_RADIUS * 1.5` | Punktabstand im ausgedünnten Körper-Cache (Kollision/KI/Rendering) |
 | `BROADCAST_RATE` | 15 | Zustands-Snapshots pro Sekunde an die Clients (≤ TICK_RATE) |
 | `SELF_COLLISION_SKIP_SEGMENTS` | 8 | *(derzeit ungenutzt, historisch von der inzwischen deaktivierten Selbstkollisionsprüfung)* |
+| `AI_FOOD_STUCK_SECONDS` | 1.8 | Zeit ohne Fortschritt zum Ziel-Futter, bevor die KI als „feststeckend“ gilt |
+| `AI_BREAK_FREE_SECONDS` | 1.0 | Dauer des bewussten, geboosteten Ausbruchs aus einer erkannten Kreisbewegung |
+| `AI_FOOD_BLACKLIST_SECONDS` | 4.0 | Wie lange ein als „Kreis-Falle“ erkanntes Futter danach ignoriert wird |
+| `AI_AVOID_LOOKAHEAD_MIN` | 160.0 | Mindest-Vorschauabstand für die KI-Ausweichprüfung |
+| `AI_AVOID_LOOKAHEAD_SECONDS` | 1.1 | Reaktionszeit, mit der die aktuelle Geschwindigkeit in den Vorschauabstand einfließt |
+| `AI_AVOID_DANGER_RADIUS` | `SNAKE_RADIUS * 3.2` | Gefahrenradius um fremde Körperpunkte für die KI-Ausweichprüfung |
 
 **Hinweis für künftige Änderungen:** Wird `TICK_RATE` oder
 `BROADCAST_RATE` geändert, passt sich `GameLoop.BROADCAST_EVERY_N_TICKS`
@@ -452,6 +503,58 @@ eigener VPS). Aktuell gewählt: **Render.com**, Free-Tier, via Docker
 jedem `git push` auf `main`. Bekannter Nachteil des Free-Tiers: Der
 Server schläft nach ~15 Minuten Inaktivität ein und braucht beim nächsten
 Aufruf 30-60 Sekunden zum Aufwachen (Cold Start).
+
+### 8.5 Vier Gameplay-Bugs: Wand-Tod, Futter-Nachschub, KI-Kreisen, KI-Ausweichen
+
+Vier zusammenhängende, aber unabhängige Bugs wurden in einer Testrunde
+gefunden und behoben:
+
+1. **Kein Game Over am Kartenrand**: Der Wand-Tod setzte `alive = false`
+   direkt in Schritt 3 von `GameEngine.tick()`, **ohne** die Schlange der
+   `toKill`-Liste hinzuzufügen. Dadurch wurde nie ein `DeathEvent` erzeugt,
+   der Client (der nur auf `{"type":"death", ...}`-Nachrichten reagiert)
+   zeigte also nie den Game-Over-Bildschirm. **Fix**: Wand-Kollision wird
+   jetzt ebenfalls in die gemeinsame `toKill`-Liste eingetragen und über
+   dieselbe Pipeline (Futter streuen, `DeathEvent`, Entfernen aus der Karte)
+   wie Schlangen-Kollisionen verarbeitet.
+2. **Futter respawnt scheinbar nicht / verteilt sich ungleichmäßig**: Die
+   Nachfüll-Schleife füllte Futter nur bis zu einer Untergrenze
+   (`FOOD_TARGET_COUNT`) auf, ohne Obergrenze. Da beim Tod einer Schlange
+   bis zu 40 Futter-Objekte gestreut wurden, konnte die Gesamtmenge über
+   lange Zeit oberhalb der Untergrenze bleiben - neues, gleichverteiltes
+   Futter spawnte dann gar nicht mehr, während das vorhandene Futter entlang
+   der Todespfade geklumpt blieb. Zusätzlich war die bisherige
+   Spawn-Position rein zufällig (keine gezielte Gleichverteilung). **Fix**:
+   Neue Konstante `FOOD_MAX_COUNT` als harte Obergrenze; `replenishFood()`
+   hält die Menge zwischen Unter- und Obergrenze; `scatterFoodFromSnake()`
+   begrenzt die gestreute Menge auf die verbleibende Kapazität;
+   `pickEvenlyDistributedPosition()` wählt neue Futter-Positionen gezielt in
+   unterbesetzten Gitterzellen statt rein zufällig.
+3. **KI-Schlangen kreisen endlos um Futter**: Die Futter-Ansteuerung hatte
+   keinerlei Fortschritts-Überwachung. Reicht der Kurvenradius bei der
+   aktuellen Geschwindigkeit nicht aus, um das Futter direkt zu treffen,
+   konnte die KI unbegrenzt darum herumkreisen, ohne je anzukommen. **Fix**:
+   Pro Schlange wird der bisher beste erreichte Abstand zum aktuellen
+   Ziel-Futter getrackt (`aiTargetBestDist`); bleibt eine Verbesserung über
+   `AI_FOOD_STUCK_SECONDS` aus, wird das Futter temporär gesperrt
+   (`aiBlacklistFoodId`/`AI_FOOD_BLACKLIST_SECONDS`) und die KI bricht für
+   `AI_BREAK_FREE_SECONDS` bewusst und geboostet in eine feste Richtung aus.
+4. **KI weicht Hindernissen oft nicht zuverlässig aus**: Die ursprüngliche
+   Ausweichlogik prüfte nur einen einzigen, fest 130 Einheiten vor dem Kopf
+   liegenden Punkt gegen reine Punkt-zu-Punkt-Abstände - unabhängig von der
+   aktuellen Geschwindigkeit. Das übersah Hindernisse, die näher am Kopf,
+   leicht seitlich der Blickrichtung, oder irgendwo zwischen Kopf und
+   Vorschaupunkt lagen (aber nicht exakt am Vorschaupunkt selbst). **Fix**:
+   Mehrere Prüfstrahlen (0°, ±0.2, ±0.45 rad) mit geschwindigkeitsskaliertem
+   Vorschauabstand (`AI_AVOID_LOOKAHEAD_MIN`/`AI_AVOID_LOOKAHEAD_SECONDS`)
+   und Punkt-zu-Strecke-Distanz (`Vector2.distanceToSegment`) statt reiner
+   Punkt-zu-Punkt-Prüfung.
+
+Alle vier Fixes wurden nach der Implementierung mit automatisierten
+WebSocket-Testskripten verifiziert (Wand-Tod löst `death`-Event aus,
+Futtermenge bleibt auch unter Last innerhalb `[FOOD_TARGET_COUNT,
+FOOD_MAX_COUNT]`, keine KI-Schlange zeigt über ein Beobachtungsfenster von
+mehreren Sekunden eine auffällig kleine Bewegungs-Bounding-Box mehr).
 
 ## 9. Deployment
 

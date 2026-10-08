@@ -27,22 +27,69 @@ public class AiController {
             return;
         }
 
-        // 2. Gefahr durch andere Schlangen direkt voraus?
+        // 2. Gefahr durch andere Schlangen auf dem Weg voraus?
         Integer dangerTurn = avoidOtherSnakes(snake, engine);
         if (dangerTurn != null) {
             snake.turnInput = dangerTurn;
             return;
         }
 
-        // 3. Nächstes Futter anvisieren
+        // Blacklist-Timer für zuvor als "Kreis-Falle" erkanntes Futter
+        // herunterzählen, damit es nach einer Weile wieder angesteuert werden darf.
+        if (snake.aiBlacklistTimer > 0) {
+            snake.aiBlacklistTimer -= dt;
+            if (snake.aiBlacklistTimer <= 0) {
+                snake.aiBlacklistFoodId = null;
+            }
+        }
+
+        // 3. Steckt die KI gerade in einem bewussten "Ausbruch" aus einer
+        // erkannten Kreisbewegung? Dann diesen zuerst zu Ende führen.
+        if (snake.aiBreakFreeTimer > 0) {
+            snake.aiBreakFreeTimer -= dt;
+            snake.turnInput = snake.aiBreakFreeDir;
+            snake.boosting = true; // schneller aus der Schleife herausfahren
+            return;
+        }
+
+        // 4. Nächstes Futter anvisieren - mit Fortschritts-Überwachung:
+        // Kommt die KI dem Ziel trotz Ansteuerns über längere Zeit nicht
+        // näher, kreist sie offenbar nur darum herum (zu enger Kurvenradius
+        // bei der aktuellen Geschwindigkeit) -> Futter sperren und bewusst
+        // in eine feste Richtung ausbrechen, statt endlos weiterzukreisen.
         Food target = findNearestFood(snake, engine);
         if (target != null) {
+            double dist = head.distanceTo(target.position);
+            if (!target.id.equals(snake.aiTargetFoodId)) {
+                snake.aiTargetFoodId = target.id;
+                snake.aiTargetBestDist = dist;
+                snake.aiTargetStuckTimer = 0;
+            } else if (dist < snake.aiTargetBestDist - 1.5) {
+                snake.aiTargetBestDist = dist;
+                snake.aiTargetStuckTimer = 0;
+            } else {
+                snake.aiTargetStuckTimer += dt;
+            }
+
+            if (snake.aiTargetStuckTimer > GameConfig.AI_FOOD_STUCK_SECONDS) {
+                snake.aiBlacklistFoodId = target.id;
+                snake.aiBlacklistTimer = GameConfig.AI_FOOD_BLACKLIST_SECONDS;
+                snake.aiBreakFreeTimer = GameConfig.AI_BREAK_FREE_SECONDS;
+                snake.aiBreakFreeDir = random.nextBoolean() ? -1 : 1;
+                snake.aiTargetFoodId = null;
+                snake.aiTargetStuckTimer = 0;
+                snake.turnInput = snake.aiBreakFreeDir;
+                snake.boosting = true;
+                return;
+            }
+
             double desiredAngle = Math.atan2(target.position.y - head.y, target.position.x - head.x);
             snake.turnInput = turnTowards(snake.angle, desiredAngle);
             return;
         }
+        snake.aiTargetFoodId = null;
 
-        // 4. Nichts gefunden -> sanft wandern (meist geradeaus mit leichten
+        // 5. Nichts gefunden -> sanft wandern (meist geradeaus mit leichten
         // Schlenkern, damit die Schlange nicht in engen Kreisen rotiert).
         snake.aiWanderTimer -= dt;
         if (snake.aiWanderTimer <= 0) {
@@ -73,33 +120,54 @@ public class AiController {
         return turnTowards(snake.angle, desiredAngle);
     }
 
+    /**
+     * Prüft, ob der Kurs der Schlange sie in eine andere Schlange führen
+     * würde, und liefert ggf. die Ausweichrichtung (-1/1).
+     *
+     * Zwei Verbesserungen gegenüber der ursprünglichen, zu "blinden" Version:
+     * 1. Der Vorschauabstand skaliert mit der aktuellen Geschwindigkeit
+     *    (schnelle/boostende Schlangen brauchen mehr Reaktionsstrecke, sonst
+     *    "übersehen" sie Hindernisse, weil sie schneller sind als ihre
+     *    eigene Vorschau reicht).
+     * 2. Es wird nicht nur EIN Punkt exakt in Blickrichtung geprüft, sondern
+     *    mehrere Strahlen leicht versetzt links/rechts davon, UND pro
+     *    Strahl der Abstand zur gesamten Strecke Kopf->Vorschaupunkt (nicht
+     *    nur zu dessen Endpunkt). Das vorherige Verfahren übersah häufig
+     *    Hindernisse, die knapp neben dem exakten Vorschaupunkt lagen oder
+     *    dichter am Kopf als der volle Vorschauabstand - das war die
+     *    Hauptursache dafür, dass Schlangen "nicht auswichen".
+     */
     private Integer avoidOtherSnakes(Snake snake, GameEngine engine) {
         Vector2 head = snake.head();
-        double lookAheadDist = 130;
-        Vector2 ahead = new Vector2(
-                head.x + Math.cos(snake.angle) * lookAheadDist,
-                head.y + Math.sin(snake.angle) * lookAheadDist
-        );
+        double speed = GameConfig.BASE_SPEED * (snake.boosting ? GameConfig.BOOST_MULTIPLIER : 1.0);
+        double lookAheadDist = Math.max(GameConfig.AI_AVOID_LOOKAHEAD_MIN, speed * GameConfig.AI_AVOID_LOOKAHEAD_SECONDS);
+        double dangerRadius = GameConfig.AI_AVOID_DANGER_RADIUS;
 
-        double dangerRadius = GameConfig.SNAKE_RADIUS * 3;
-        for (Snake other : engine.getSnakes().values()) {
-            // Der eigene Körper ist seit der Abschaltung der Selbstkollision
-            // ungefährlich -> die KI muss ihm nicht mehr ausweichen (das hat
-            // zuvor bei langen, aufgerollten Schlangen zu Endlos-Kreisen geführt).
-            if (!other.alive || other == snake) continue;
-            List<Vector2> body = other.cachedBody;
-            for (int i = 0; i < body.size(); i++) {
-                if (ahead.distanceTo(body.get(i)) < dangerRadius) {
-                    // Teste, ob links oder rechts freier ist
-                    double leftAngle = snake.angle - Math.toRadians(45);
-                    double rightAngle = snake.angle + Math.toRadians(45);
-                    Vector2 leftProbe = new Vector2(head.x + Math.cos(leftAngle) * lookAheadDist,
-                            head.y + Math.sin(leftAngle) * lookAheadDist);
-                    Vector2 rightProbe = new Vector2(head.x + Math.cos(rightAngle) * lookAheadDist,
-                            head.y + Math.sin(rightAngle) * lookAheadDist);
-                    double leftClearance = distanceToNearestBody(leftProbe, engine, snake);
-                    double rightClearance = distanceToNearestBody(rightProbe, engine, snake);
-                    return leftClearance > rightClearance ? -1 : 1;
+        double[] probeAngleOffsets = {0.0, -0.2, 0.2, -0.45, 0.45};
+        for (double offset : probeAngleOffsets) {
+            double probeAngle = snake.angle + offset;
+            Vector2 ahead = new Vector2(
+                    head.x + Math.cos(probeAngle) * lookAheadDist,
+                    head.y + Math.sin(probeAngle) * lookAheadDist
+            );
+            for (Snake other : engine.getSnakes().values()) {
+                // Der eigene Körper ist seit der Abschaltung der Selbstkollision
+                // ungefährlich -> die KI muss ihm nicht mehr ausweichen (das hat
+                // zuvor bei langen, aufgerollten Schlangen zu Endlos-Kreisen geführt).
+                if (!other.alive || other == snake) continue;
+                for (Vector2 p : other.cachedBody) {
+                    if (p.distanceToSegment(head, ahead) < dangerRadius) {
+                        // Teste, ob links oder rechts freier ist
+                        double leftAngle = snake.angle - Math.toRadians(45);
+                        double rightAngle = snake.angle + Math.toRadians(45);
+                        Vector2 leftProbe = new Vector2(head.x + Math.cos(leftAngle) * lookAheadDist,
+                                head.y + Math.sin(leftAngle) * lookAheadDist);
+                        Vector2 rightProbe = new Vector2(head.x + Math.cos(rightAngle) * lookAheadDist,
+                                head.y + Math.sin(rightAngle) * lookAheadDist);
+                        double leftClearance = distanceToNearestBody(leftProbe, engine, snake);
+                        double rightClearance = distanceToNearestBody(rightProbe, engine, snake);
+                        return leftClearance > rightClearance ? -1 : 1;
+                    }
                 }
             }
         }
@@ -124,6 +192,10 @@ public class AiController {
         Food nearest = null;
         double nearestDist = sightRadius;
         for (Food f : engine.getFoods().values()) {
+            // Futter überspringen, das gerade als "Kreis-Falle" erkannt und
+            // gesperrt wurde (siehe update()), damit die KI nicht sofort
+            // wieder dieselbe Kreisbewegung startet.
+            if (f.id.equals(snake.aiBlacklistFoodId)) continue;
             double d = head.distanceTo(f.position);
             if (d < nearestDist) {
                 nearestDist = d;

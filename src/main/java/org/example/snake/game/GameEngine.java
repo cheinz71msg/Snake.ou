@@ -138,22 +138,25 @@ public class GameEngine {
         // Futter-Check und Broadcast die aktuellen Positionen verwenden.
         refreshBodyCache();
 
-        // 3. Kartenrand-Kollision
+        // 3. Kartenrand-Kollision: wer den Rand verlässt, stirbt ebenfalls -
+        // und zwar über dieselbe toKill-Liste wie Schlangen-Kollisionen, damit
+        // auch hierfür ein DeathEvent erzeugt wird (sonst bleibt der Client
+        // beim Erreichen des Randes ohne Game-Over-Anzeige hängen).
+        List<Snake> toKill = new ArrayList<>();
         for (Snake s : snakes.values()) {
             if (!s.alive) continue;
             Vector2 h = s.head();
             if (h.x < 0 || h.y < 0 || h.x > GameConfig.MAP_WIDTH || h.y > GameConfig.MAP_HEIGHT) {
-                s.alive = false;
+                toKill.add(s);
             }
         }
 
         // 4. Schlangen-Kollision: stirbt nur, wessen KOPF eine ANDERE Schlange berührt.
         // Die eigene Selbstberührung tötet bewusst nicht (wie bei Wormate.io),
         // man kann sich also problemlos selbst "einringeln".
-        List<Snake> toKill = new ArrayList<>();
         double collisionDist = GameConfig.SNAKE_RADIUS * 1.7;
         for (Snake s : snakes.values()) {
-            if (!s.alive) continue;
+            if (!s.alive || toKill.contains(s)) continue;
             Vector2 head = s.head();
             boolean dead = false;
             for (Snake other : snakes.values()) {
@@ -171,10 +174,10 @@ public class GameEngine {
         }
 
 
-        // 5. Futter essen
+        // 5. Futter essen (tote/sterbende Schlangen dürfen nicht mehr fressen)
         double eatDist = GameConfig.SNAKE_RADIUS + GameConfig.FOOD_RADIUS;
         for (Snake s : snakes.values()) {
-            if (!s.alive) continue;
+            if (!s.alive || toKill.contains(s)) continue;
             Vector2 head = s.head();
             Food eaten = null;
             for (Food f : foods.values()) {
@@ -197,11 +200,27 @@ public class GameEngine {
             deathEvents.add(new DeathEvent(dead.id, dead.playerSlot, dead.name, dead.length));
         }
 
-        // 7. Welt-Erhaltung: Futter & KI-Population auffüllen
+        // 7. Welt-Erhaltung: Futter (Unter- UND Obergrenze) & KI-Population auffüllen
+        replenishFood();
+        maintainAiPopulation();
+    }
+
+    /**
+     * Hält die Futtermenge zwischen FOOD_TARGET_COUNT (Minimum, damit immer
+     * genug zum Fressen da ist) und FOOD_MAX_COUNT (Maximum, damit die Karte
+     * durch z. B. viele Tode auf einmal nicht mit Futter "zugemüllt" wird).
+     */
+    private void replenishFood() {
         while (foods.size() < GameConfig.FOOD_TARGET_COUNT) {
             spawnFood();
         }
-        maintainAiPopulation();
+        if (foods.size() > GameConfig.FOOD_MAX_COUNT) {
+            int excess = foods.size() - GameConfig.FOOD_MAX_COUNT;
+            List<String> ids = new ArrayList<>(foods.keySet());
+            for (int i = 0; i < excess && i < ids.size(); i++) {
+                foods.remove(ids.get(i));
+            }
+        }
     }
 
     /** Liefert alle seit dem letzten Aufruf aufgetretenen Todesfälle und leert die Warteschlange. */
@@ -216,7 +235,11 @@ public class GameEngine {
 
     private void scatterFoodFromSnake(Snake snake) {
         List<Vector2> body = snake.sampledBody(GameConfig.SNAKE_RADIUS * 3);
-        int limit = Math.min(body.size(), 40);
+        // Nicht mehr streuen, als unter der Obergrenze FOOD_MAX_COUNT noch Platz ist -
+        // sonst kann eine Welle gleichzeitiger Tode (z. B. viele KI-Schlangen) die
+        // Karte dauerhaft mit Futter überfluten.
+        int remainingCapacity = Math.max(0, GameConfig.FOOD_MAX_COUNT - foods.size());
+        int limit = Math.min(Math.min(body.size(), 40), remainingCapacity);
         for (int i = 0; i < limit; i++) {
             Vector2 p = body.get(i);
             String id = UUID.randomUUID().toString();
@@ -246,9 +269,59 @@ public class GameEngine {
 
     private void spawnFood() {
         String id = UUID.randomUUID().toString();
-        Vector2 pos = new Vector2(random.nextDouble() * GameConfig.MAP_WIDTH, random.nextDouble() * GameConfig.MAP_HEIGHT);
+        Vector2 pos = pickEvenlyDistributedPosition();
         String color = randomSkin().primary();
         foods.put(id, new Food(id, pos, GameConfig.FOOD_RADIUS, color));
+    }
+
+    /**
+     * Wählt eine Spawn-Position so, dass neues Futter bevorzugt in Bereichen
+     * der Karte entsteht, die aktuell WENIG Futter haben. Dazu wird die Karte
+     * gedanklich in ein Gitter aus Zellen (FOOD_GRID_CELL_SIZE) eingeteilt,
+     * die Belegung pro Zelle anhand des vorhandenen Futters gezählt, und eine
+     * der am dünnsten besetzten Zellen zufällig ausgewählt. Das verhindert,
+     * dass sich Futter (z. B. durch Streu-Futter toter Schlangen) dauerhaft
+     * an einzelnen Stellen klumpt, während andere Bereiche der Karte leer bleiben.
+     */
+    private Vector2 pickEvenlyDistributedPosition() {
+        double cellSize = GameConfig.FOOD_GRID_CELL_SIZE;
+        int cols = Math.max(1, (int) Math.ceil(GameConfig.MAP_WIDTH / cellSize));
+        int rows = Math.max(1, (int) Math.ceil(GameConfig.MAP_HEIGHT / cellSize));
+        int[][] counts = new int[cols][rows];
+        for (Food f : foods.values()) {
+            int cx = clamp((int) (f.position.x / cellSize), 0, cols - 1);
+            int cy = clamp((int) (f.position.y / cellSize), 0, rows - 1);
+            counts[cx][cy]++;
+        }
+
+        int minCount = Integer.MAX_VALUE;
+        for (int cx = 0; cx < cols; cx++) {
+            for (int cy = 0; cy < rows; cy++) {
+                if (counts[cx][cy] < minCount) minCount = counts[cx][cy];
+            }
+        }
+
+        List<int[]> candidates = new ArrayList<>();
+        for (int cx = 0; cx < cols; cx++) {
+            for (int cy = 0; cy < rows; cy++) {
+                if (counts[cx][cy] == minCount) candidates.add(new int[]{cx, cy});
+            }
+        }
+        int[] chosen = candidates.get(random.nextInt(candidates.size()));
+
+        double x = chosen[0] * cellSize + random.nextDouble() * cellSize;
+        double y = chosen[1] * cellSize + random.nextDouble() * cellSize;
+        x = clamp(x, 0, GameConfig.MAP_WIDTH);
+        y = clamp(y, 0, GameConfig.MAP_HEIGHT);
+        return new Vector2(x, y);
+    }
+
+    private static int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    private static double clamp(double v, double min, double max) {
+        return Math.max(min, Math.min(max, v));
     }
 
     private Vector2 randomSpawnPosition() {

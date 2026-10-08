@@ -42,6 +42,16 @@ public class Snake {
     public int aiWanderTurn = 0;
     public boolean aiAvoidingWall = false;
 
+    // --- Zusätzlicher KI-Zustand zur Erkennung und Vermeidung von
+    // endlosem Kreisen um ein Futterziel (siehe AiController.update()). ---
+    public String aiTargetFoodId = null;
+    public double aiTargetBestDist = Double.MAX_VALUE;
+    public double aiTargetStuckTimer = 0;
+    public String aiBlacklistFoodId = null;
+    public double aiBlacklistTimer = 0;
+    public double aiBreakFreeTimer = 0;
+    public int aiBreakFreeDir = 1;
+
     public double length;
     public boolean alive = true;
 

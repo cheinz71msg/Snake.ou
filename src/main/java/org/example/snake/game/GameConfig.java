@@ -23,7 +23,7 @@ public final class GameConfig {
 
     public static final double TICK_INTERVAL_SECONDS = 1.0 / TICK_RATE;
 
-    /** Anzahl der Futter-Objekte, die mindestens auf der Karte vorhanden sein sollen. */
+    /** Minimale Anzahl der Futter-Objekte, die laufend nachgefüllt wird (siehe auch FOOD_MAX_COUNT). */
     public static final int FOOD_TARGET_COUNT = 350;
 
     /** Grundgeschwindigkeit einer Schlange in Welt-Einheiten pro Sekunde. */
@@ -47,6 +47,24 @@ public final class GameConfig {
     /** Radius eines Futter-Objekts. */
     public static final double FOOD_RADIUS = 7.0;
 
+    /**
+     * Harte Obergrenze für die Gesamtzahl an Futter-Objekten auf der Karte.
+     * Verhindert, dass nach vielen gleichzeitigen Todesfällen (jeder tote
+     * Snake streut Futter entlang seines Körpers) die Karte dauerhaft
+     * "zugemüllt" wird und normales, gleichmäßig verteiltes Nachspawnen
+     * ausbleibt, weil die Gesamtmenge schon über dem Minimum liegt. Muss
+     * größer oder gleich FOOD_TARGET_COUNT sein.
+     */
+    public static final int FOOD_MAX_COUNT = 450;
+
+    /**
+     * Kantenlänge (Welt-Einheiten) der Gitterzellen, die für die
+     * gleichmäßige Verteilung neu gespawnten Futters verwendet werden
+     * (siehe GameEngine.pickEvenlyDistributedPosition). Kleinere Werte
+     * ergeben eine feinere, aber etwas teurere Verteilung.
+     */
+    public static final double FOOD_GRID_CELL_SIZE = 400.0;
+
     /** Anzahl Einträge in der Bestenliste. */
     public static final int LEADERBOARD_SIZE = 10;
 
@@ -66,4 +84,37 @@ public final class GameConfig {
      * ausgenommen werden, damit die Schlange sich nicht sofort selbst "beißt".
      */
     public static final int SELF_COLLISION_SKIP_SEGMENTS = 8;
+
+    // ---------------------------------------------------------------
+    // KI-Verhalten (Futter-Suche & Ausweichen vor anderen Schlangen)
+    // ---------------------------------------------------------------
+
+    /**
+     * Wie viele Sekunden eine KI ununterbrochen auf dasselbe Futter
+     * zusteuern darf, OHNE dass sich der Abstand spürbar verringert, bevor
+     * angenommen wird, dass sie "feststeckt" (z. B. weil ihr Kurvenradius
+     * bei der aktuellen Geschwindigkeit zu groß ist und sie dauerhaft um
+     * das Futter herumkreist). Danach wird das Futter kurzzeitig gesperrt
+     * und die KI bricht bewusst aus der Kreisbewegung aus.
+     */
+    public static final double AI_FOOD_STUCK_SECONDS = 1.8;
+
+    /** Wie lange (Sekunden) eine KI nach erkanntem Kreisen bewusst in eine feste Richtung ausbricht. */
+    public static final double AI_BREAK_FREE_SECONDS = 1.0;
+
+    /** Wie lange (Sekunden) ein als "Kreis-Falle" erkanntes Futter danach von der KI ignoriert wird. */
+    public static final double AI_FOOD_BLACKLIST_SECONDS = 4.0;
+
+    /** Mindest-Vorschauabstand (Welt-Einheiten) für die Ausweichprüfung vor anderen Schlangen. */
+    public static final double AI_AVOID_LOOKAHEAD_MIN = 160.0;
+
+    /**
+     * Reaktionszeit (Sekunden), die in den Vorschauabstand einberechnet
+     * wird: lookAheadDist = max(AI_AVOID_LOOKAHEAD_MIN, aktuelleGeschwindigkeit * AI_AVOID_LOOKAHEAD_SECONDS).
+     * Dadurch schauen schnelle/boostende Schlangen weiter voraus als langsame.
+     */
+    public static final double AI_AVOID_LOOKAHEAD_SECONDS = 1.1;
+
+    /** Gefahrenradius (Welt-Einheiten) um einen fremden Körperpunkt, innerhalb dessen die KI ausweicht. */
+    public static final double AI_AVOID_DANGER_RADIUS = SNAKE_RADIUS * 3.2;
 }
