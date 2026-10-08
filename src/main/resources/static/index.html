@@ -30,7 +30,8 @@
 
         <div class="controls-help">
             <h3>Steuerung</h3>
-            <p>Pfeiltasten oder WASD zum Drehen · ↑ / W zum Boosten</p>
+            <p class="keyboard-hint">Pfeiltasten oder WASD zum Drehen · ↑ / W zum Boosten</p>
+            <p class="touch-hint">Steuerkreuz unten links zum Lenken · Blitz-Knopf unten rechts zum Boosten</p>
         </div>
     </div>
 </section>
@@ -48,6 +49,16 @@
 
     <div id="hud" class="panel hud">
         <span id="hudP1">Länge: 0</span>
+    </div>
+
+    <!-- Touch-Steuerung: wird nur auf Touch-Geräten (Handy/Tablet) per CSS
+         eingeblendet, siehe @media (hover:none),(pointer:coarse) in style.css.
+         Auf dem Desktop bleibt dieser Block komplett unsichtbar. -->
+    <div id="touchControls" class="touch-controls">
+        <div id="touchJoystick" class="touch-joystick">
+            <div id="touchKnob" class="touch-knob"></div>
+        </div>
+        <button id="touchBoostBtn" class="touch-boost-btn" aria-label="Boost">⚡</button>
     </div>
 
     <button id="muteBtn" class="icon-btn" title="Ton an/aus">🔊</button>

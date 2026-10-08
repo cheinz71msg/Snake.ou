@@ -56,6 +56,14 @@ public class Snake {
     public boolean alive = true;
 
     /**
+     * Sekunden verbleibender Spawn-Schutz (Unverwundbarkeit direkt nach dem
+     * Spawnen). Zählt in GameEngine.tick() pro Tick herunter; solange > 0
+     * nimmt diese Schlange nicht an Kollisionsprüfungen teil (weder als
+     * Opfer noch als Hindernis für andere).
+     */
+    public double spawnProtectionTimer = GameConfig.SPAWN_PROTECTION_SECONDS;
+
+    /**
      * Zwischengespeicherter, ausgedünnter Körper (siehe {@link #sampledBody}).
      * Wird von der GameEngine einmal pro Tick aktualisiert und dann mehrfach
      * (Kollisionsprüfung, KI-Ausweichlogik, Zustands-Snapshot) wiederverwendet,
@@ -161,5 +169,10 @@ public class Snake {
 
     public boolean isPlayer() {
         return playerSlot != null;
+    }
+
+    /** True, solange der frisch gespawnte Schlange-Schild aktiv ist (siehe spawnProtectionTimer). */
+    public boolean isSpawnProtected() {
+        return spawnProtectionTimer > 0;
     }
 }

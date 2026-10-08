@@ -201,6 +201,21 @@ html, body {
     margin: 4px 0;
 }
 
+/* Auf Desktop/Maus-Geräten nur den Tastatur-Hinweis zeigen, auf
+   Touch-Geräten (Handy/Tablet) nur den Touch-Hinweis. */
+.touch-hint {
+    display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .keyboard-hint {
+        display: none;
+    }
+    .touch-hint {
+        display: block;
+    }
+}
+
 /* ---------------- Spiel ---------------- */
 #gameScreen {
     background: #060b16;
@@ -213,6 +228,7 @@ html, body {
     width: 100%;
     height: 100%;
     display: block;
+    touch-action: none;
 }
 
 #minimap {
@@ -294,12 +310,14 @@ html, body {
 }
 
 .hud {
-    bottom: 16px;
-    left: 16px;
+    top: 206px;
+    right: 16px;
     display: flex;
-    gap: 18px;
+    flex-direction: column;
+    gap: 6px;
     font-size: 15px;
     font-weight: bold;
+    text-align: right;
 }
 
 .icon-btn {
@@ -330,6 +348,9 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Muss immer ÜBER der Touch-Steuerung liegen, egal in welcher
+       Reihenfolge die Elemente im DOM stehen. */
+    z-index: 20;
 }
 
 .overlay-box {
@@ -344,4 +365,72 @@ html, body {
 .overlay-box h2 {
     margin-top: 0;
     color: #ff6b6b;
+}
+
+/* ---------------- Touch-Steuerung (nur Mobilgeräte) ---------------- */
+
+.touch-controls {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    /* Standardmäßig klicken/tappen durch - nur die konkreten Steuerelemente
+       (Joystick, Boost-Knopf) sollen Touches tatsächlich abfangen. */
+    pointer-events: none;
+}
+
+.touch-joystick {
+    position: absolute;
+    left: 24px;
+    bottom: 24px;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    touch-action: none;
+    pointer-events: auto;
+}
+
+.touch-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    height: 56px;
+    margin-left: -28px;
+    margin-top: -28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.35);
+    border: 2px solid rgba(255, 255, 255, 0.65);
+}
+
+.touch-boost-btn {
+    position: absolute;
+    right: 24px;
+    bottom: 96px;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(55, 214, 122, 0.25);
+    color: #eef2ff;
+    font-size: 28px;
+    touch-action: none;
+    pointer-events: auto;
+    transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.touch-boost-btn.active {
+    background: rgba(55, 214, 122, 0.6);
+    transform: scale(0.94);
+}
+
+/* Auf Geräten mit Maus/Trackpad (echtes Desktop-Hover+Fine-Pointer) werden
+   die Touch-Controls niemals angezeigt, selbst falls sie aus irgendeinem
+   Grund im DOM sichtbar geschaltet würden - dort wird ausschließlich über
+   Tastatur gesteuert. */
+@media (hover: hover) and (pointer: fine) {
+    .touch-controls {
+        display: none !important;
+    }
 }

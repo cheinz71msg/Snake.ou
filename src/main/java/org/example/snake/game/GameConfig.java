@@ -117,4 +117,29 @@ public final class GameConfig {
 
     /** Gefahrenradius (Welt-Einheiten) um einen fremden Körperpunkt, innerhalb dessen die KI ausweicht. */
     public static final double AI_AVOID_DANGER_RADIUS = SNAKE_RADIUS * 3.2;
+
+    // ---------------------------------------------------------------
+    // Spawn-Sicherheit (verhindert sofortigen Tod direkt nach dem Spawnen)
+    // ---------------------------------------------------------------
+
+    /**
+     * Mindestabstand (Welt-Einheiten), den eine neu gewählte Spawn-Position
+     * von allen bereits vorhandenen Schlangenkörpern haben soll. Wird beim
+     * Spawnen mehrfach eine zufällige Position gewürfelt und die am
+     * weitesten entfernte genommen, falls keine Position diesen
+     * Mindestabstand erreicht (z. B. bei sehr voller Karte).
+     */
+    public static final double SPAWN_MIN_DISTANCE = 400.0;
+
+    /** Wie viele zufällige Positionen beim Spawnen maximal probiert werden. */
+    public static final int SPAWN_POSITION_ATTEMPTS = 25;
+
+    /**
+     * Wie viele Sekunden eine frisch gespawnte Schlange unverwundbar ist
+     * (kann weder sterben noch von anderen Schlangen "gerammt" werden -
+     * sie ist für diese Zeit quasi ein Geist). Verhindert, dass man direkt
+     * nach dem Spawnen durch eine zufällig in der Nähe befindliche Schlange
+     * sofort wieder stirbt.
+     */
+    public static final double SPAWN_PROTECTION_SECONDS = 3.0;
 }

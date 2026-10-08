@@ -116,14 +116,14 @@ Snapshots zurück in JSON. `GameLoop` ist der einzige Taktgeber
 
 ```
 index.html              Markup für Menü-Screen und Spiel-Screen (zwei <section>, via [hidden] umgeschaltet)
-css/style.css           Gesamtes Styling (Menü-Glasoptik, Spiel-Panels, Skin-Picker, Bestenliste etc.)
+css/style.css           Gesamtes Styling (Menü-Glasoptik, Spiel-Panels, Skin-Picker, Bestenliste, Touch-Steuerung etc.)
 js/
   libs/sockjs.min.js     Vendored SockJS-Client (keine npm-Abhängigkeit zur Laufzeit)
   skins.js               SKIN_LIST: clientseitige Kopie der Skin-Definitionen (siehe 5.3 - muss mit Backend synchron bleiben)
   audio.js               GameAudio-Modul: prozedurale Web-Audio-API-Sounds (kein Audio-Dateien-Download nötig)
   network.js             Network-Modul: SockJS-Verbindung, join/control/leave, Event-Callbacks (onState/onDeath/onJoined)
   render.js              Renderer-Modul: Kamera, Canvas-Zeichnung, Minimap, Bestenliste, HUD, Client-Interpolation
-  main.js                Orchestrierung: Menü-Events, Skin-Picker-Aufbau, Tastatur-Input, verbindet Network<->Renderer
+  main.js                Orchestrierung: Menü-Events, Skin-Picker-Aufbau, Tastatur- UND Touch-Input, verbindet Network<->Renderer
 ```
 
 **Architekturprinzip Frontend**: Jede JS-Datei exponiert ein einziges
@@ -149,10 +149,19 @@ Projekt ohne npm/Webpack auskommt und leicht verständlich bleibt.
 7. Der Client speichert die letzten zwei Snapshots und interpoliert
    clientseitig zwischen ihnen für eine flüssige Darstellung unabhängig
    von der tatsächlichen Netzwerk-/Broadcast-Rate (siehe 3.4).
-8. Tastatureingaben (Pfeiltasten/WASD) werden sofort als
+8. Eingaben werden sofort als
    `{"type":"control", "slot":1, "turn":-1|0|1, "boost":true|false}`
    an den Server gesendet (kein Client-seitiges Antizipieren der Bewegung
-   - bewusst simpel gehalten, auf Kosten von etwas Eingabe-Latenz).
+   - bewusst simpel gehalten, auf Kosten von etwas Eingabe-Latenz). Zwei
+   gleichwertige Eingabewege liefern dieselbe `control`-Nachricht:
+   - **Tastatur** (Desktop): Pfeiltasten/WASD setzen `turn` direkt auf
+     -1/0/1, „oben“/„W“ setzt `boost`.
+   - **Touch** (Mobilgeräte, siehe Abschnitt 4.7): Ein virtueller Joystick
+     liefert eine gewünschte Weltrichtung; der Client vergleicht sie
+     fortlaufend (alle 60 ms) mit der aus den letzten zwei Körpersegmenten
+     abgeleiteten aktuellen Blickrichtung der eigenen Schlange und leitet
+     daraus `turn` ab (dieselbe Logik wie `AiController.turnTowards()` auf
+     dem Server, nur im Client für die eigene Steuerung nachgebildet).
 9. Stirbt die eigene Schlange, sendet der Server
    `{"type":"death", "snakeId":..., "slot":..., "name":..., "length":...}`;
    der Client zeigt ein Game-Over-Overlay.
@@ -237,6 +246,15 @@ Client einfach nur den letzten Snapshot zeichnen würde. Stattdessen:
   `FOOD_MAX_COUNT` noch verbleibende Kapazität begrenzt, damit viele
   gleichzeitige Tode (z. B. mehrere KI-Schlangen) die Karte nicht dauerhaft
   mit Futter überfluten.
+- **Spawn-Schutz**: Jede frisch erzeugte Schlange (Spieler wie KI) ist für
+  `SPAWN_PROTECTION_SECONDS` (Sekunden) unverwundbar
+  (`Snake.spawnProtectionTimer`, zählt pro Tick herunter). Während dieser
+  Zeit nimmt die Schlange an **keiner** Kollisionsprüfung teil - weder als
+  potenzielles Opfer (Wand- und Schlangen-Kollision werden für sie
+  übersprungen) noch als Hindernis für andere Schlangen (auch die
+  KI-Ausweichlogik ignoriert geschützte Schlangen, siehe Abschnitt 4.4).
+  Der Client erhält das Flag `shielded` im Zustands-Snapshot und zeigt
+  dafür einen pulsierenden Schutzring um den Kopf. Siehe auch Abschnitt 8.6.
 
 ### 4.4 KI-Schlangen (Computer-Gegner)
 
@@ -298,6 +316,17 @@ gewinnt, siehe `AiController.update()`):
    rechts. Dadurch bewegt sich die KI überwiegend geradlinig mit
    gelegentlichen sanften Kursänderungen statt in engen Kreisen zu rotieren.
 
+**Namensvergabe**: Jede neue KI-Schlange erhält über
+`GameEngine.pickUniqueAiName()` einen Namen, der unter allen aktuell
+lebenden KI-Schlangen eindeutig ist. Der feste Namenspool (`AI_NAMES`, 15
+Einträge) wird zufällig durchmischt und der erste noch nicht vergebene Name
+verwendet; ist der Pool erschöpft (z. B. weil `MAX_SNAKES` größer ist als
+die Anzahl vordefinierter Namen), werden nummerierte Varianten ("Viper II",
+"Viper III", ...) erzeugt. (Historischer Bug: Der Name wurde rein zufällig
+aus `AI_NAMES` gezogen, ohne auf bereits vergebene Namen zu achten, wodurch
+bei bis zu 20 gleichzeitigen Schlangen und nur 15 Namen häufig Duplikate
+auftraten, siehe Abschnitt 8.6.)
+
 ### 4.5 Bestenliste
 
 - Bei jedem Snapshot werden alle lebenden Schlangen absteigend nach
@@ -329,6 +358,43 @@ gewinnt, siehe `AiController.update()`):
   farblich interpoliert (`lerpColor` in `render.js`, linear über den
   RGB-Raum, Faktor = Position im Körper von 0 bei Kopf bis 1 beim
   Schwanzende).
+
+### 4.7 Touch-Steuerung (Mobilgeräte)
+
+Damit das Spiel auch auf Handys/Tablets ohne Tastatur spielbar ist, bietet
+`main.js` zusätzlich zur Tastatursteuerung eine Touch-Steuerung an, die
+**ausschließlich** auf Touch-Geräten aktiv wird und auf dem Desktop
+vollständig unsichtbar/inaktiv bleibt:
+
+- **Geräteerkennung**: Sowohl CSS (`@media (hover: none), (pointer: coarse)`
+  in `style.css`) als auch JavaScript (`window.matchMedia(...)` in
+  `main.js`, `setupTouchControls()`) prüfen unabhängig voneinander, ob das
+  Gerät ein grobes/berührungsbasiertes Zeigegerät ohne Hover-Fähigkeit hat
+  (typisch für Handy/Tablet). Nur dann werden die Touch-Controls per CSS
+  sichtbar geschaltet UND die Touch-Event-Listener registriert. Geräte mit
+  Maus/Trackpad (`hover: hover` + `pointer: fine`) zeigen die Controls nie
+  (CSS-Regel mit `!important`, zweite Verteidigungslinie zusätzlich zur
+  JS-Prüfung).
+- **Virtueller Joystick** (`#touchJoystick`, unten links): Ein Finger kann
+  irgendwo im Kreis aufgesetzt werden; die Auslenkung relativ zum
+  Start-Berührungspunkt (bis max. 46 px, mit 10 px Totzone) bestimmt die
+  **gewünschte Weltrichtung** (`desiredAngle = atan2(dy, dx)` - Bildschirm-
+  und Weltkoordinaten sind deckungsgleich, da die Kamera nur verschiebt,
+  nicht rotiert, siehe `worldToScreen`). Alle 60 ms wird die aktuelle
+  Blickrichtung der eigenen Schlange aus den letzten zwei Körpersegmenten
+  des letzten Zustands-Snapshots (`Renderer.lastState`) berechnet und mit
+  `desiredAngle` verglichen, um `turn` (-1/0/1) abzuleiten - dieselbe
+  Vergleichslogik wie `AiController.turnTowards()` auf dem Server, nur
+  clientseitig für die eigene Steuerung nachgebildet.
+- **Boost-Knopf** (`#touchBoostBtn`, unten rechts, „⚡“): `touchstart`
+  setzt `boost = true`, `touchend`/`touchcancel` setzt ihn zurück auf
+  `false`. Visuelles Feedback über die CSS-Klasse `.active`.
+- Beide Steuerelemente verwenden `touch-action: none` und
+  `e.preventDefault()`, damit kein Scrollen/Pinch-Zoom der Seite ausgelöst
+  wird, während gesteuert wird.
+- Die Hinweistexte im Hauptmenü (`.keyboard-hint` / `.touch-hint`) werden
+  ebenfalls über dieselbe CSS-Media-Query umgeschaltet, sodass Spieler je
+  nach Gerät die passende Steuerungsanleitung sehen.
 
 ## 5. Konfiguration (`GameConfig.java`)
 
@@ -363,6 +429,9 @@ Bewegung") ist i. d. R. **nur diese Datei** anzupassen.
 | `AI_AVOID_LOOKAHEAD_MIN` | 160.0 | Mindest-Vorschauabstand für die KI-Ausweichprüfung |
 | `AI_AVOID_LOOKAHEAD_SECONDS` | 1.1 | Reaktionszeit, mit der die aktuelle Geschwindigkeit in den Vorschauabstand einfließt |
 | `AI_AVOID_DANGER_RADIUS` | `SNAKE_RADIUS * 3.2` | Gefahrenradius um fremde Körperpunkte für die KI-Ausweichprüfung |
+| `SPAWN_MIN_DISTANCE` | 400.0 | Angestrebter Mindestabstand einer neuen Spawn-Position zu allen vorhandenen Schlangen |
+| `SPAWN_POSITION_ATTEMPTS` | 25 | Wie viele zufällige Positionen beim Spawnen maximal probiert werden, bevor der beste Kompromiss genommen wird |
+| `SPAWN_PROTECTION_SECONDS` | 3.0 | Dauer der Unverwundbarkeit direkt nach dem Spawnen |
 
 **Hinweis für künftige Änderungen:** Wird `TICK_RATE` oder
 `BROADCAST_RATE` geändert, passt sich `GameLoop.BROADCAST_EVERY_N_TICKS`
@@ -429,6 +498,7 @@ Endpoint: `/ws/game` (SockJS, `setAllowedOriginPatterns("*")`).
 
 **`state.snakes[]`** Einträge: `id`, `name`, `color` (Kopf-Hex), `color2`
 (Schwanz-Hex), `slot` (Integer oder `null` bei KI), `length` (gerundet),
+`shielded` (bool, true während des Spawn-Schutzes, siehe Abschnitt 4.3),
 `segments` (Array aus `[x, y]`-Paaren, ausgedünnter Körper, neuester/
 Kopf-Punkt zuerst, Koordinaten auf eine Nachkommastelle gerundet).
 
@@ -555,6 +625,57 @@ WebSocket-Testskripten verifiziert (Wand-Tod löst `death`-Event aus,
 Futtermenge bleibt auch unter Last innerhalb `[FOOD_TARGET_COUNT,
 FOOD_MAX_COUNT]`, keine KI-Schlange zeigt über ein Beobachtungsfenster von
 mehreren Sekunden eine auffällig kleine Bewegungs-Bounding-Box mehr).
+
+### 8.6 Doppelte KI-Namen, sofortiger Tod nach Spawn, fehlende Mobil-Steuerung
+
+Drei weitere, unabhängige Bugs wurden in einer weiteren Testrunde gefunden
+und behoben:
+
+1. **Doppelte KI-Namen**: `maintainAiPopulation()` wählte den Namen rein
+   zufällig aus dem festen `AI_NAMES`-Pool (15 Einträge), ohne zu prüfen,
+   ob er bereits von einer anderen lebenden KI-Schlange verwendet wurde.
+   Bei bis zu `MAX_SNAKES` (20) gleichzeitigen Schlangen (davon potenziell
+   fast alle KI) traten dadurch regelmäßig Namensduplikate auf. **Fix**:
+   `pickUniqueAiName()` mischt den Pool, nimmt den ersten noch nicht
+   vergebenen Namen, und erzeugt bei erschöpftem Pool nummerierte Varianten
+   ("Viper II", "Viper III", ...), sodass Namen innerhalb der KI-Population
+   immer eindeutig bleiben.
+2. **Keine Steuerung auf Mobilgeräten**: Das Spiel kannte ausschließlich
+   Tastatureingaben (Pfeiltasten/WASD), wodurch es auf Touch-Geräten ohne
+   physische Tastatur faktisch unspielbar war. **Fix**: Neue, rein
+   Touch-basierte Steuerung (virtueller Joystick + Boost-Knopf, siehe
+   Abschnitt 4.7), die per CSS-Media-Query (`hover: none`/`pointer: coarse`)
+   UND per JavaScript-Feature-Detection ausschließlich auf Touch-Geräten
+   aktiviert wird - auf dem Desktop bleibt die Oberfläche unverändert
+   tastaturgesteuert und zeigt keinerlei Touch-Bedienelemente an (verifiziert
+   mit automatisierten Playwright-Tests unter Desktop- und
+   iPhone-13-Emulation).
+3. **Sofortiger Tod direkt nach dem Spawnen**: Neue Schlangen (Spieler wie
+   KI) wurden an einer rein zufälligen Position auf der Karte platziert,
+   ohne Rücksicht auf bereits vorhandene Schlangen. Auf einer vollen Karte
+   (bis zu 20 Schlangen) führte das häufig dazu, dass man direkt neben oder
+   sogar innerhalb einer anderen Schlange spawnte und sofort starb, bevor
+   man überhaupt reagieren konnte. **Fix**, zwei sich ergänzende
+   Maßnahmen:
+   - `randomSpawnPosition()` probiert bis zu `SPAWN_POSITION_ATTEMPTS`
+     zufällige Positionen und wählt die erste, die `SPAWN_MIN_DISTANCE` zu
+     allen vorhandenen Schlangenkörpern einhält (Fallback: die am
+     weitesten entfernte probierte Position, falls keine den Mindestabstand
+     erreicht - z. B. bei einer sehr vollen Karte).
+   - Zusätzlich bekommt jede neue Schlange einen zeitlich begrenzten
+     Spawn-Schutz (`SPAWN_PROTECTION_SECONDS`, siehe Abschnitt 4.3): Während
+     dieser Zeit ist sie für Kollisionen (in beide Richtungen) komplett
+     unsichtbar/"geisterhaft". Das federt auch die seltenen Fälle ab, in
+     denen trotz Mindestabstand-Suche eine andere Schlange kurz nach dem
+     Spawnen vorbeikommt.
+
+Alle drei Fixes wurden verifiziert: Namenseindeutigkeit per WebSocket-Test
+über eine volle 20-Schlangen-Karte, Spawn-Schutz per wiederholtem Join auf
+einer aktiven Karte (kein Tod innerhalb der Schutzzeit über mehrere Läufe),
+Mobil-Steuerung per automatisiertem Playwright-Test (Touch-Controls
+sichtbar/funktional unter iPhone-13-Emulation, unsichtbar unter
+Desktop-Viewport, keine JavaScript-Fehler, Joystick-Drag löst tatsächlich
+`Network.sendControl()`-Aufrufe aus).
 
 ## 9. Deployment
 

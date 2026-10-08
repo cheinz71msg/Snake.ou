@@ -216,6 +216,18 @@ const Renderer = (() => {
         if (segs.length > 1) {
             angle = Math.atan2(head[1] - segs[1][1], head[0] - segs[1][0]);
         }
+
+        // Spawn-Schutz-Schild: pulsierender Ring um den Kopf, solange die
+        // Schlange gerade unverwundbar ist (siehe GameEngine.spawnProtectionTimer).
+        if (snake.shielded) {
+            const pulse = 4 + Math.sin(performance.now() / 150) * 2;
+            ctx.beginPath();
+            ctx.strokeStyle = "rgba(120, 220, 255, 0.85)";
+            ctx.lineWidth = 2.5;
+            ctx.arc(p.x, p.y, 18 + pulse, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
         const eyeOffset = 5;
         for (const side of [-1, 1]) {
             const ex = p.x + Math.cos(angle + side * 0.9) * eyeOffset;

@@ -1,10 +1,13 @@
 package org.example.snake.game;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -120,6 +123,13 @@ public class GameEngine {
         // dieser Bewegung aktualisieren (entspricht dem bisherigen Verhalten).
         refreshBodyCache();
 
+        // Spawn-Schutz-Timer herunterzählen (siehe Snake.spawnProtectionTimer).
+        for (Snake s : snakes.values()) {
+            if (s.spawnProtectionTimer > 0) {
+                s.spawnProtectionTimer = Math.max(0, s.spawnProtectionTimer - dt);
+            }
+        }
+
         // 1. KI-Eingaben berechnen
         for (Snake s : snakes.values()) {
             if (s.alive && !s.isPlayer()) {
@@ -142,9 +152,10 @@ public class GameEngine {
         // und zwar über dieselbe toKill-Liste wie Schlangen-Kollisionen, damit
         // auch hierfür ein DeathEvent erzeugt wird (sonst bleibt der Client
         // beim Erreichen des Randes ohne Game-Over-Anzeige hängen).
+        // Frisch gespawnte (noch geschützte) Schlangen können hierdurch nicht sterben.
         List<Snake> toKill = new ArrayList<>();
         for (Snake s : snakes.values()) {
-            if (!s.alive) continue;
+            if (!s.alive || s.isSpawnProtected()) continue;
             Vector2 h = s.head();
             if (h.x < 0 || h.y < 0 || h.x > GameConfig.MAP_WIDTH || h.y > GameConfig.MAP_HEIGHT) {
                 toKill.add(s);
@@ -153,14 +164,16 @@ public class GameEngine {
 
         // 4. Schlangen-Kollision: stirbt nur, wessen KOPF eine ANDERE Schlange berührt.
         // Die eigene Selbstberührung tötet bewusst nicht (wie bei Wormate.io),
-        // man kann sich also problemlos selbst "einringeln".
+        // man kann sich also problemlos selbst "einringeln". Schlangen mit
+        // aktivem Spawn-Schutz sterben nicht UND zählen auch nicht als
+        // Hindernis für andere (sie sind für die Dauer des Schutzes "Geister").
         double collisionDist = GameConfig.SNAKE_RADIUS * 1.7;
         for (Snake s : snakes.values()) {
-            if (!s.alive || toKill.contains(s)) continue;
+            if (!s.alive || toKill.contains(s) || s.isSpawnProtected()) continue;
             Vector2 head = s.head();
             boolean dead = false;
             for (Snake other : snakes.values()) {
-                if (!other.alive || other == s) continue;
+                if (!other.alive || other == s || other.isSpawnProtected()) continue;
                 List<Vector2> body = other.cachedBody;
                 for (int i = 1; i < body.size(); i++) {
                     if (head.distanceTo(body.get(i)) < collisionDist) {
@@ -251,11 +264,47 @@ public class GameEngine {
         while (snakes.size() < GameConfig.MAX_SNAKES) {
             Vector2 spawn = randomSpawnPosition();
             String id = UUID.randomUUID().toString();
-            String name = AI_NAMES[random.nextInt(AI_NAMES.length)];
+            String name = pickUniqueAiName();
             Skin skin = randomSkin();
             Snake snake = new Snake(id, name, skin.primary(), skin.secondary(), null, spawn, random.nextDouble() * Math.PI * 2);
             snakes.put(id, snake);
         }
+    }
+
+    /**
+     * Wählt einen Namen für eine neue KI-Schlange, der unter den aktuell
+     * lebenden KI-Schlangen noch nicht vergeben ist. Ist der feste
+     * Namenspool (AI_NAMES) erschöpft (z. B. weil MAX_SNAKES größer ist als
+     * die Anzahl vordefinierter Namen), werden nummerierte Varianten
+     * ("Viper II", "Viper III", ...) verwendet, um trotzdem eindeutige
+     * Namen zu garantieren. (Historischer Bug: Der Name wurde rein
+     * zufällig aus AI_NAMES gezogen, ohne auf bereits vergebene Namen zu
+     * achten, wodurch häufig mehrere Schlangen denselben Namen trugen.)
+     */
+    private String pickUniqueAiName() {
+        Set<String> used = new HashSet<>();
+        for (Snake s : snakes.values()) {
+            if (!s.isPlayer()) used.add(s.name);
+        }
+        List<String> pool = new ArrayList<>(List.of(AI_NAMES));
+        Collections.shuffle(pool, random);
+        for (String candidate : pool) {
+            if (!used.contains(candidate)) return candidate;
+        }
+        for (int suffix = 2; suffix <= 50; suffix++) {
+            for (String base : pool) {
+                String candidate = base + " " + toRomanNumeral(suffix);
+                if (!used.contains(candidate)) return candidate;
+            }
+        }
+        // Praktisch unerreichbar (würde > 50 * AI_NAMES.length gleichzeitige
+        // KI-Schlangen voraussetzen), aber als letzter Ausweg immer eindeutig:
+        return "Schlange-" + UUID.randomUUID().toString().substring(0, 4);
+    }
+
+    private static String toRomanNumeral(int n) {
+        String[] numerals = {"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"};
+        return n >= 1 && n <= numerals.length ? numerals[n - 1] : String.valueOf(n);
     }
 
     /** Berechnet den ausgedünnten Körper jeder lebenden Schlange einmal und speichert ihn zwischen. */
@@ -324,11 +373,55 @@ public class GameEngine {
         return Math.max(min, Math.min(max, v));
     }
 
+    /**
+     * Wählt eine Spawn-Position, die möglichst weit von allen bereits
+     * vorhandenen Schlangen entfernt ist: Es werden mehrere zufällige
+     * Positionen gewürfelt (innerhalb eines Randabstands zur Kartenwand)
+     * und die erste genommen, die den Mindestabstand SPAWN_MIN_DISTANCE zu
+     * jeder anderen Schlange einhält. Wird dieser nach allen Versuchen von
+     * keiner Position erreicht (z. B. sehr volle Karte), wird die am
+     * weitesten entfernte der probierten Positionen verwendet (bester
+     * Kompromiss statt komplett zufällig mitten in einer anderen Schlange
+     * zu spawnen). Ergänzt den zusätzlichen Spawn-Schutz (siehe
+     * Snake.spawnProtectionTimer) als zweite Verteidigungslinie gegen
+     * sofortigen Tod direkt nach dem Spawnen.
+     */
     private Vector2 randomSpawnPosition() {
         double margin = 300;
-        double x = margin + random.nextDouble() * (GameConfig.MAP_WIDTH - 2 * margin);
-        double y = margin + random.nextDouble() * (GameConfig.MAP_HEIGHT - 2 * margin);
-        return new Vector2(x, y);
+        Vector2 best = null;
+        double bestDist = -1;
+        for (int attempt = 0; attempt < GameConfig.SPAWN_POSITION_ATTEMPTS; attempt++) {
+            double x = margin + random.nextDouble() * (GameConfig.MAP_WIDTH - 2 * margin);
+            double y = margin + random.nextDouble() * (GameConfig.MAP_HEIGHT - 2 * margin);
+            Vector2 candidate = new Vector2(x, y);
+            double minDist = nearestSnakeDistance(candidate);
+            if (minDist >= GameConfig.SPAWN_MIN_DISTANCE) {
+                return candidate;
+            }
+            if (minDist > bestDist) {
+                bestDist = minDist;
+                best = candidate;
+            }
+        }
+        return best != null ? best : new Vector2(GameConfig.MAP_WIDTH / 2.0, GameConfig.MAP_HEIGHT / 2.0);
+    }
+
+    /** Kürzester Abstand von point zu irgendeinem Körperpunkt einer lebenden Schlange. */
+    private double nearestSnakeDistance(Vector2 point) {
+        double min = Double.MAX_VALUE;
+        for (Snake s : snakes.values()) {
+            if (!s.alive) continue;
+            if (s.cachedBody.isEmpty()) {
+                double d = point.distanceTo(s.head());
+                if (d < min) min = d;
+                continue;
+            }
+            for (Vector2 p : s.cachedBody) {
+                double d = point.distanceTo(p);
+                if (d < min) min = d;
+            }
+        }
+        return min;
     }
 
     /** Baut den kompletten Zustand als einfache Map-Struktur (-> JSON) für den Client. */
@@ -348,6 +441,7 @@ public class GameEngine {
             m.put("color2", s.secondaryColor);
             m.put("slot", s.playerSlot);
             m.put("length", Math.round(s.length));
+            m.put("shielded", s.isSpawnProtected());
             List<double[]> segs = new ArrayList<>();
             for (Vector2 p : s.cachedBody) {
                 segs.add(new double[]{Math.round(p.x * 10) / 10.0, Math.round(p.y * 10) / 10.0});

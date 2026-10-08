@@ -154,7 +154,9 @@ public class AiController {
                 // Der eigene Körper ist seit der Abschaltung der Selbstkollision
                 // ungefährlich -> die KI muss ihm nicht mehr ausweichen (das hat
                 // zuvor bei langen, aufgerollten Schlangen zu Endlos-Kreisen geführt).
-                if (!other.alive || other == snake) continue;
+                // Schlangen mit aktivem Spawn-Schutz sind "Geister" - man kann
+                // nicht mit ihnen kollidieren, die KI muss ihnen also auch nicht ausweichen.
+                if (!other.alive || other == snake || other.isSpawnProtected()) continue;
                 for (Vector2 p : other.cachedBody) {
                     if (p.distanceToSegment(head, ahead) < dangerRadius) {
                         // Teste, ob links oder rechts freier ist
