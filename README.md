@@ -21,11 +21,17 @@ Browserbasiertes Multiplayer-Snake-Spiel im Stil von Wormate.io.
 - Sound-Effekte und Hintergrundmusik
 
 ## Lokal starten
+Das Projekt in IntelliJ IDEA öffnen und die geteilte Run-Konfiguration
+**„Snake.ou lokal“** auswählen. Sie startet Spring Boot samt Spielserver.
+Alternativ im Projektverzeichnis im Terminal:
+
 ```
-mvn clean package
-java -jar target/Snake.ou-1.0-SNAPSHOT.jar
+mvn spring-boot:run
 ```
-Danach im Browser `http://localhost:8080` öffnen.
+
+Danach im Browser `http://localhost:8080` öffnen. Der SockJS-WebSocket-Endpunkt
+des Spiels ist `http://localhost:8080/ws/game`; eine separate WebSocket-
+Anwendung muss nicht gestartet werden.
 
 ## Deployment (Render.com)
 Das Projekt enthält ein `Dockerfile` und eine `render.yaml`. Bei Render.com
