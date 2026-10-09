@@ -777,6 +777,28 @@ nummerierten Namen kombiniert (z. B. "Viper Shadow"). Verifiziert per
 WebSocket-Test: Bei einer vollen 20-Schlangen-Karte sind alle Namen
 eindeutig und keiner trägt eine nummerierte Endung.
 
+### 8.9 Hintergrundmusik klang wie ein dauerhaftes Brummen
+
+Die ursprüngliche Hintergrundmusik in `audio.js` bestand aus zwei
+Oszillatoren mit festen, leicht verstimmten Frequenzen (110 Hz und
+165 Hz), die ab `startMusic()` endlos liefen. Das war als sanfter
+Schwebungston gedacht, wurde von Spielern aber als störendes,
+dauerhaftes Brummen wahrgenommen.
+
+**Fix**: `startMusic()` spielt jetzt keine dauerhaft laufenden
+Oszillatoren mehr, sondern erzeugt eine zurückhaltende, prozedurale
+Melodie-Loop: In unregelmäßigen Abständen (1,4-3,0 s, zufällig, nicht
+mechanisch getaktet) erklingt eine einzelne, weich ein- und
+ausklingende Note aus einer A-Moll-Pentatonik-Tonleiter (immer
+harmonisch, unabhängig von der Reihenfolge). Jede Note läuft über einen
+gemeinsamen, leisen Echo-Bus (Delay + Feedback), was der Musik räumliche
+Tiefe gibt, ohne dass ein Ton dauerhaft klingt. Zwischen den Noten ist
+es still. `stopMusic()` bricht lediglich das Scheduling (`setTimeout`)
+ab; es gibt keine persistent laufenden Audio-Knoten mehr, die aktiv
+gestoppt werden müssten. Verifiziert per Playwright: Spielstart, Aufruf
+von `startMusic()`/`stopMusic()` erzeugt keine Konsolen- oder
+Seitenfehler.
+
 ## 9. Deployment
 
 - **Repository**: GitHub, `cheinz71msg/Snake.ou`, Branch `main`.
@@ -788,6 +810,10 @@ eindeutig und keiner trägt eine nummerierte Endung.
   `server.port=${PORT:8080}` - Render (und die meisten Cloud-Hoster) geben
   den Port über die Umgebungsvariable `PORT` vor; lokal ohne diese Variable
   wird weiterhin Port 8080 verwendet.
+- **Lokaler Start**: Die geteilte IntelliJ-Konfiguration
+  `.run/Snake.ou Local.run.xml` startet `SnakeGameApplication`. Alternativ
+  startet `mvn spring-boot:run` die Anwendung aus dem Projektverzeichnis.
+  Das Spiel und sein SockJS-Endpunkt `/ws/game` laufen im selben Prozess.
 - **`render.yaml`**: Render-„Blueprint“, das beim Verbinden des Repos
   automatisch erkannt wird (`runtime: docker`, `plan: free`,
   `region: frankfurt`, `autoDeploy: true`). Jeder Push auf `main` löst
