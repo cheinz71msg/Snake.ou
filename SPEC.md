@@ -123,13 +123,24 @@ js/
   audio.js               GameAudio-Modul: prozedurale Web-Audio-API-Sounds (kein Audio-Dateien-Download nötig)
   network.js             Network-Modul: SockJS-Verbindung, join/control/leave, Event-Callbacks (onState/onDeath/onJoined)
   render.js              Renderer-Modul: Kamera, Canvas-Zeichnung, Minimap, Bestenliste, HUD, Client-Interpolation
-  main.js                Orchestrierung: Menü-Events, Skin-Picker-Aufbau, Tastatur- UND Touch-Input, verbindet Network<->Renderer
+  main.js                Orchestrierung: Menü-Events, Skin-Picker-Aufbau, Tastatur- UND Touch-Input, verbindet Network<->Renderer, speichert Name/Skin in localStorage
 ```
 
 **Architekturprinzip Frontend**: Jede JS-Datei exponiert ein einziges
 globales Modul-Objekt (IIFE-Pattern, z. B. `Network`, `Renderer`,
 `GameAudio`) ohne Build-Step/Bundler - bewusst einfach gehalten, damit das
 Projekt ohne npm/Webpack auskommt und leicht verständlich bleibt.
+
+**Gespeicherte Präferenzen**: Name und gewählter Skin werden unter dem
+`localStorage`-Schlüssel `snakeGame.prefs` (JSON, Felder `name`/`skin`)
+auf dem Gerät gespeichert - bei jeder Namenseingabe, jeder Skin-Auswahl und
+beim Klick auf „Play“. Beim nächsten Seitenaufruf wird das Namensfeld
+vorausgefüllt und der zuletzt gewählte Skin markiert, sodass man das nicht
+erneut eintippen muss. `localStorage` statt Cookie, da rein clientseitig
+benötigt (kein Server muss es lesen) und ohne Cookie-Zustimmungs-/
+Übertragungs-Overhead bei jeder Anfrage auskommt. Fehlschläge (z. B.
+privater Modus/voller Speicher) werden stillschweigend ignoriert - der
+Name muss dann wie zuvor manuell eingegeben werden.
 
 ### 3.3 Datenfluss (High-Level)
 
@@ -322,14 +333,20 @@ gewinnt, siehe `AiController.update()`):
 
 **Namensvergabe**: Jede neue KI-Schlange erhält über
 `GameEngine.pickUniqueAiName()` einen Namen, der unter allen aktuell
-lebenden KI-Schlangen eindeutig ist. Der feste Namenspool (`AI_NAMES`, 15
-Einträge) wird zufällig durchmischt und der erste noch nicht vergebene Name
-verwendet; ist der Pool erschöpft (z. B. weil `MAX_SNAKES` größer ist als
-die Anzahl vordefinierter Namen), werden nummerierte Varianten ("Viper II",
-"Viper III", ...) erzeugt. (Historischer Bug: Der Name wurde rein zufällig
-aus `AI_NAMES` gezogen, ohne auf bereits vergebene Namen zu achten, wodurch
-bei bis zu 20 gleichzeitigen Schlangen und nur 15 Namen häufig Duplikate
-auftraten, siehe Abschnitt 8.6.)
+lebenden KI-Schlangen eindeutig ist. Der feste Namenspool (`AI_NAMES`, 33
+Einträge - bewusst größer als `MAX_SNAKES`, damit der Pool bei voller
+Karte nie erschöpft ist) wird zufällig durchmischt und der erste noch
+nicht vergebene Name verwendet. Nur im praktisch unerreichbaren Fall, dass
+mehr KI-Schlangen gleichzeitig leben als Namen im Pool vorhanden sind,
+werden zwei Pool-Namen zu einem neuen, weiterhin **nicht** nummerierten
+Namen kombiniert (z. B. "Viper Shadow"). (Historischer Bug: Der Name
+wurde rein zufällig aus `AI_NAMES` gezogen, ohne auf bereits vergebene
+Namen zu achten, wodurch bei bis zu 20 gleichzeitigen Schlangen und nur 15
+Namen häufig Duplikate auftraten, siehe Abschnitt 8.6. Ein Zwischenstand
+nutzte danach nummerierte Varianten ("Viper II", "Viper III", ...) als
+Fallback bei erschöpftem Pool - das wirkte aber unbeabsichtigt wie
+durchgezählte Spielernamen und wurde durch einen größeren Pool plus
+nicht-nummerierten Kombinations-Fallback ersetzt, siehe Abschnitt 8.8.)
 
 ### 4.5 Bestenliste
 
@@ -738,6 +755,27 @@ WebSocket-Testskript, das künstliche Zusatzlatenz (80 ms) auf jede
 gesendete `control`-Nachricht aufschlug: Der Winkel der Test-Schlange
 konvergierte sauber auf die Zielrichtung (±0.01 rad) und blieb danach
 stabil, ohne zu pendeln.
+
+### 8.8 Nummerierte KI-Namen wirkten unbeabsichtigt wie durchgezählte Spielernamen
+
+Der in Abschnitt 8.6 beschriebene Fix für doppelte KI-Namen nutzte als
+Fallback bei erschöpftem Namenspool nummerierte Varianten ("Viper II",
+"Viper III", ...). Das garantierte zwar Eindeutigkeit, wirkte aber
+inkonsistent: Bei vollen Karten (nahe `MAX_SNAKES` = 20, Pool nur 15
+Namen) traten diese nummerierten Namen regelmäßig auf und sahen aus wie
+durchnummerierte Spielernamen - bei echten Spielern wäre das in Ordnung
+(sie wählen ihren Namen ja selbst und erwarten ggf. Unterscheidung), bei
+computergesteuerten Gegnern wirkte es aber wie ein Darstellungsfehler.
+
+**Fix**: Der feste Namenspool `AI_NAMES` wurde von 15 auf 33 Einträge
+erweitert - bewusst größer als `MAX_SNAKES`, sodass der Pool bei
+normalem Spielbetrieb praktisch nie erschöpft ist und die Nummerierung gar
+nicht erst zum Tragen kommt. Der (nun praktisch unerreichbare) Fallback
+bei Pool-Erschöpfung wurde ebenfalls geändert: statt einer Nummerierung
+werden zwei zufällige Pool-Namen zu einem neuen, weiterhin nicht
+nummerierten Namen kombiniert (z. B. "Viper Shadow"). Verifiziert per
+WebSocket-Test: Bei einer vollen 20-Schlangen-Karte sind alle Namen
+eindeutig und keiner trägt eine nummerierte Endung.
 
 ## 9. Deployment
 

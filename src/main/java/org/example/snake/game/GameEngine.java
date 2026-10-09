@@ -34,7 +34,10 @@ public class GameEngine {
 
     private static final String[] AI_NAMES = {
             "Viper", "Wurmi", "Sly", "Nibbler", "Blitzschlange", "Rakete", "Pixel",
-            "Boa", "Flitzer", "Kobra", "Anaconda", "Shadow", "Turbo", "Mamba", "Zick-Zack"
+            "Boa", "Flitzer", "Kobra", "Anaconda", "Shadow", "Turbo", "Mamba", "Zick-Zack",
+            "Python", "Ringelnatter", "Giftzahn", "Schleicher", "Wirbel", "Natter",
+            "Sidewinder", "Constrictor", "Hornviper", "Schlingel", "Zischling",
+            "Nixe", "Draco", "Flinkzunge", "Sepia", "Krake", "Phantom", "Komet"
     };
 
     /** Ein Skin besteht aus einer Kopf- und einer Schwanzfarbe (für einen Farbverlauf am Körper). */
@@ -299,13 +302,15 @@ public class GameEngine {
 
     /**
      * Wählt einen Namen für eine neue KI-Schlange, der unter den aktuell
-     * lebenden KI-Schlangen noch nicht vergeben ist. Ist der feste
-     * Namenspool (AI_NAMES) erschöpft (z. B. weil MAX_SNAKES größer ist als
-     * die Anzahl vordefinierter Namen), werden nummerierte Varianten
-     * ("Viper II", "Viper III", ...) verwendet, um trotzdem eindeutige
-     * Namen zu garantieren. (Historischer Bug: Der Name wurde rein
-     * zufällig aus AI_NAMES gezogen, ohne auf bereits vergebene Namen zu
-     * achten, wodurch häufig mehrere Schlangen denselben Namen trugen.)
+     * lebenden KI-Schlangen noch nicht vergeben ist. Der Namenspool
+     * (AI_NAMES, 33 Einträge) ist bewusst größer als MAX_SNAKES, damit bei
+     * voller Karte niemals zwei KI-Schlangen denselben Namen tragen.
+     * (Historischer Bug: Der Name wurde rein zufällig aus AI_NAMES gezogen,
+     * ohne auf bereits vergebene Namen zu achten, wodurch häufig mehrere
+     * Schlangen denselben Namen trugen. Ein späterer Zwischenstand nutzte
+     * nummerierte Varianten wie "Viper II" als Fallback - das wirkte aber
+     * unbeabsichtigt wie durchgezählte Spielernamen und wurde durch einen
+     * größeren Pool ersetzt.)
      */
     private String pickUniqueAiName() {
         Set<String> used = new HashSet<>();
@@ -317,20 +322,19 @@ public class GameEngine {
         for (String candidate : pool) {
             if (!used.contains(candidate)) return candidate;
         }
-        for (int suffix = 2; suffix <= 50; suffix++) {
-            for (String base : pool) {
-                String candidate = base + " " + toRomanNumeral(suffix);
+        // Praktisch unerreichbar (würde mehr gleichzeitige KI-Schlangen als
+        // AI_NAMES.length voraussetzen), aber als Fallback werden zwei
+        // Pool-Namen zu einem neuen, weiterhin nicht-nummerierten Namen
+        // kombiniert (z. B. "Viper Shadow"), statt durchzuzählen.
+        Collections.shuffle(pool, random);
+        for (String first : pool) {
+            for (String second : pool) {
+                if (first.equals(second)) continue;
+                String candidate = first + " " + second;
                 if (!used.contains(candidate)) return candidate;
             }
         }
-        // Praktisch unerreichbar (würde > 50 * AI_NAMES.length gleichzeitige
-        // KI-Schlangen voraussetzen), aber als letzter Ausweg immer eindeutig:
         return "Schlange-" + UUID.randomUUID().toString().substring(0, 4);
-    }
-
-    private static String toRomanNumeral(int n) {
-        String[] numerals = {"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"};
-        return n >= 1 && n <= numerals.length ? numerals[n - 1] : String.valueOf(n);
     }
 
     /** Berechnet den ausgedünnten Körper jeder lebenden Schlange einmal und speichert ihn zwischen. */

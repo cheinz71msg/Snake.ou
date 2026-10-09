@@ -4,19 +4,53 @@
 (() => {
     const mySnakeIds = {1: null};
     const previousLength = {1: null};
-    let selectedSkin = SKIN_LIST[0].id;
+
+    // Gespeicherte Vorlieben (Name, Skin) aus einem vorherigen Besuch laden,
+    // damit man sie nicht bei jedem Seitenaufruf neu eingeben muss.
+    // localStorage statt Cookie: einfacher in reinem Client-JS zu nutzen,
+    // wird nicht bei jeder Anfrage an den Server mitgeschickt und bleibt
+    // genauso dauerhaft auf dem Gerät erhalten.
+    const PREFS_KEY = "snakeGame.prefs";
+    function loadPrefs() {
+        try {
+            return JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+        } catch (e) {
+            return {};
+        }
+    }
+    function savePrefs(prefs) {
+        try {
+            localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+        } catch (e) {
+            // z. B. privater Modus/Speicher voll - einfach ignorieren,
+            // Name muss dann wieder manuell eingegeben werden.
+        }
+    }
+    const savedPrefs = loadPrefs();
+
+    let selectedSkin = (savedPrefs.skin && SKIN_LIST.some(s => s.id === savedPrefs.skin))
+        ? savedPrefs.skin
+        : SKIN_LIST[0].id;
 
     const menuScreen = document.getElementById("menu");
     const gameScreen = document.getElementById("gameScreen");
     const playBtn = document.getElementById("playBtn");
     const muteBtn = document.getElementById("muteBtn");
+    const nameInput = document.getElementById("nameP1");
+
+    if (savedPrefs.name) {
+        nameInput.value = savedPrefs.name;
+    }
+    nameInput.addEventListener("input", () => {
+        savePrefs({name: nameInput.value, skin: selectedSkin});
+    });
 
     // Skin-Auswahl im Menü aufbauen
     const skinPicker = document.getElementById("skinPicker");
     SKIN_LIST.forEach((skin, index) => {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "skin-swatch" + (index === 0 ? " selected" : "");
+        btn.className = "skin-swatch" + (skin.id === selectedSkin ? " selected" : "");
         btn.title = skin.name;
         btn.style.background = `linear-gradient(135deg, ${skin.primary}, ${skin.secondary})`;
         btn.addEventListener("click", () => {
@@ -24,6 +58,7 @@
             skinPicker.querySelectorAll(".skin-swatch").forEach(el => el.classList.remove("selected"));
             btn.classList.add("selected");
             GameAudio.playClick();
+            savePrefs({name: nameInput.value, skin: selectedSkin});
         });
         skinPicker.appendChild(btn);
     });
@@ -42,7 +77,8 @@
         GameAudio.playClick();
         GameAudio.startMusic();
 
-        const nameP1 = document.getElementById("nameP1").value || "Spieler";
+        const nameP1 = nameInput.value || "Spieler";
+        savePrefs({name: nameP1, skin: selectedSkin});
 
         playBtn.disabled = true;
         playBtn.textContent = "Verbinde ...";
