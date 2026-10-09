@@ -64,11 +64,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             }
             case "control" -> {
                 int slot = ((Number) payload.get("slot")).intValue();
-                int turn = ((Number) payload.get("turn")).intValue();
                 boolean boost = Boolean.TRUE.equals(payload.get("boost"));
                 String snakeId = slots.get(slot);
                 if (snakeId != null) {
-                    gameEngine.setControl(snakeId, turn, boost);
+                    Object angleVal = payload.get("angle");
+                    if (angleVal instanceof Number) {
+                        // Touch-Joystick: gewünschte Weltrichtung statt diskretem turn
+                        gameEngine.setControlAngle(snakeId, ((Number) angleVal).doubleValue(), boost);
+                    } else {
+                        int turn = ((Number) payload.get("turn")).intValue();
+                        gameEngine.setControl(snakeId, turn, boost);
+                    }
                 }
             }
             case "leave" -> {

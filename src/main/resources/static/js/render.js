@@ -304,5 +304,12 @@ const Renderer = (() => {
         if (p1) hudP1.textContent = `Länge: ${p1.length}`;
     }
 
-    return {init, renderState, get lastState() { return lastState; }};
+    return {
+        init, renderState,
+        get lastState() { return lastState; },
+        // Zeitstempel (performance.now()) des letzten empfangenen Server-
+        // Snapshots - wird für clientseitiges "Dead Reckoning" der eigenen
+        // Blickrichtung bei der Touch-Steuerung benötigt (main.js).
+        get lastStateReceivedAt() { return currReceivedAt; }
+    };
 })();

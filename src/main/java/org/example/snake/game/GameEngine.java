@@ -114,6 +114,23 @@ public class GameEngine {
         if (s != null) {
             s.turnInput = Math.max(-1, Math.min(1, turnInput));
             s.boosting = boosting;
+            s.manualDesiredAngle = null; // Tastatursteuerung deaktiviert den Touch-Winkel-Modus
+        }
+    }
+
+    /**
+     * Steuerung für den Touch-Joystick: Statt eines diskreten turnInput wird
+     * direkt die gewünschte Weltrichtung übergeben. Die Auflösung in einen
+     * turnInput passiert serverseitig in {@link #tick(double)}, damit der
+     * Vergleich aktueller/gewünschter Winkel ohne Netzwerk-Latenz erfolgt
+     * (sonst überschwingt die Steuerung auf langsamen Mobilfunkverbindungen,
+     * siehe Abschnitt 8.6/4.7 in SPEC.md).
+     */
+    public void setControlAngle(String snakeId, double desiredAngle, boolean boosting) {
+        Snake s = snakes.get(snakeId);
+        if (s != null) {
+            s.manualDesiredAngle = desiredAngle;
+            s.boosting = boosting;
         }
     }
 
@@ -134,6 +151,15 @@ public class GameEngine {
         for (Snake s : snakes.values()) {
             if (s.alive && !s.isPlayer()) {
                 aiController.update(s, this, dt);
+            }
+        }
+
+        // 1b. Touch-Joystick-Schlangen: gewünschten Winkel (ohne Latenz,
+        // direkt hier auf dem Server) in einen turnInput auflösen - siehe
+        // Snake.manualDesiredAngle.
+        for (Snake s : snakes.values()) {
+            if (s.alive && s.manualDesiredAngle != null) {
+                s.turnInput = AiController.staticTurnTowards(s.angle, s.manualDesiredAngle);
             }
         }
 

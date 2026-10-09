@@ -149,19 +149,23 @@ Projekt ohne npm/Webpack auskommt und leicht verständlich bleibt.
 7. Der Client speichert die letzten zwei Snapshots und interpoliert
    clientseitig zwischen ihnen für eine flüssige Darstellung unabhängig
    von der tatsächlichen Netzwerk-/Broadcast-Rate (siehe 3.4).
-8. Eingaben werden sofort als
-   `{"type":"control", "slot":1, "turn":-1|0|1, "boost":true|false}`
-   an den Server gesendet (kein Client-seitiges Antizipieren der Bewegung
-   - bewusst simpel gehalten, auf Kosten von etwas Eingabe-Latenz). Zwei
-   gleichwertige Eingabewege liefern dieselbe `control`-Nachricht:
-   - **Tastatur** (Desktop): Pfeiltasten/WASD setzen `turn` direkt auf
-     -1/0/1, „oben“/„W“ setzt `boost`.
+8. Eingaben werden sofort als `control`-Nachricht an den Server gesendet
+   (kein Client-seitiges Antizipieren der Bewegung - bewusst simpel
+   gehalten, auf Kosten von etwas Eingabe-Latenz). Zwei gleichwertige, aber
+   technisch unterschiedliche Eingabewege liefern zwei unterschiedliche
+   Varianten derselben Nachricht:
+   - **Tastatur** (Desktop): Pfeiltasten/WASD setzen direkt
+     `{"type":"control","slot":1,"turn":-1|0|1,"boost":true|false}`,
+     „oben“/„W“ setzt `boost`.
    - **Touch** (Mobilgeräte, siehe Abschnitt 4.7): Ein virtueller Joystick
-     liefert eine gewünschte Weltrichtung; der Client vergleicht sie
-     fortlaufend (alle 60 ms) mit der aus den letzten zwei Körpersegmenten
-     abgeleiteten aktuellen Blickrichtung der eigenen Schlange und leitet
-     daraus `turn` ab (dieselbe Logik wie `AiController.turnTowards()` auf
-     dem Server, nur im Client für die eigene Steuerung nachgebildet).
+     liefert eine gewünschte Weltrichtung, die direkt als
+     `{"type":"control","slot":1,"angle":<rad>,"boost":true|false}`
+     gesendet wird (alle 60 ms sowie bei jeder Fingerbewegung) - der Server
+     löst daraus selbst, latenzfrei, jeden Tick den nötigen `turn`-Wert auf
+     (`Snake.manualDesiredAngle` + `AiController.staticTurnTowards()` in
+     `GameEngine.tick()`). Lässt der Spieler den Joystick los, wird wieder
+     eine normale `turn`-Nachricht gesendet, was `manualDesiredAngle` auf
+     dem Server zurücksetzt.
 9. Stirbt die eigene Schlange, sendet der Server
    `{"type":"death", "snakeId":..., "slot":..., "name":..., "length":...}`;
    der Client zeigt ein Game-Over-Overlay.
@@ -378,27 +382,35 @@ vollständig unsichtbar/inaktiv bleibt:
 - **Virtueller Joystick** (`#touchJoystick`, unten links): Ein Finger kann
   irgendwo im Kreis aufgesetzt werden; die Auslenkung relativ zum
   Start-Berührungspunkt (bis max. 46 px, mit 10 px Totzone) bestimmt die
-  **gewünschte Weltrichtung** (`desiredAngle = atan2(dy, dx)` - Bildschirm-
-  und Weltkoordinaten sind deckungsgleich, da die Kamera nur verschiebt,
-  nicht rotiert, siehe `worldToScreen`). Alle 60 ms wird die aktuelle
-  Blickrichtung der eigenen Schlange aus den letzten zwei Körpersegmenten
-  des letzten Zustands-Snapshots (`Renderer.lastState`) berechnet und mit
-  `desiredAngle` verglichen, um `turn` (-1/0/1) abzuleiten - dieselbe
-  Vergleichslogik wie `AiController.turnTowards()` auf dem Server. Die
-  aktuelle Blickrichtung wird dabei direkt aus dem vom Server im
-  Zustands-Snapshot mitgesendeten `angle`-Feld gelesen (nicht mehr aus den
-  ausgedünnten Body-Segmenten geschätzt - diese Schätzung war verrauscht
-  und verzögert genug, um trotz Hysterese noch sichtbares Zickzack-Drehen
-  zu verursachen). Dabei kommt ein **Schmitt-Trigger mit zwei Schwellen**
-  statt einer einzelnen Deadzone zum Einsatz (`TURN_START_THRESHOLD = 0.28` rad zum (Wieder-)Anfahren,
-  `TURN_STOP_THRESHOLD = 0.08` rad zum Anhalten): Eine einzelne, enge
-  Deadzone führte dazu, dass die Schlange ständig hin- und herpendelte, da
-  der tatsächlich pro Korrekturintervall gedrehte Winkel (abhängig von
-  `TURN_RATE_DEG_PER_SEC` und der Broadcast-Verzögerung) größer war als die
-  Deadzone selbst - jede Korrektur schoss über das Ziel hinaus und wurde im
-  nächsten Intervall wieder zurückgedreht. Mit der weiten Start- und der
-  engen Stop-Schwelle bleibt die Schlange ruhig, sobald sie grob auf Kurs
-  ist, und lenkt erst bei spürbarer Abweichung erneut.
+  **gewünschte Weltrichtung** (`desiredAngle = atan2(dy, dx)` über eine
+  exponentiell geglättete Richtung, um Finger-Zittern zu filtern -
+  Bildschirm- und Weltkoordinaten sind deckungsgleich, da die Kamera nur
+  verschiebt, nicht rotiert, siehe `worldToScreen`). Dieser Winkel wird
+  direkt per `control`-Nachricht mit einem `angle`-Feld (statt `turn`) an
+  den Server geschickt (`Network.sendControlAngle`, alle 60 ms sowie bei
+  jeder Fingerbewegung). Der **Server** vergleicht `angle` jeden Tick mit
+  der tatsächlichen Blickrichtung der Schlange und leitet daraus die
+  nötige Drehrichtung ab (`Snake.manualDesiredAngle`,
+  `AiController.staticTurnTowards()`, aufgerufen aus `GameEngine.tick()`)
+  - exakt dieselbe Logik, die die KI für ihre eigene Zielsteuerung nutzt.
+  Lässt der Spieler den Joystick los, wird wieder in den normalen
+  `turnInput`-Modus gewechselt (eine `control`-Nachricht mit `turn` statt
+  `angle` setzt `manualDesiredAngle` auf dem Server zurück auf `null`).
+  **Wichtig - warum die Winkelauflösung auf dem Server passiert und nicht
+  im Client:** Ein früherer Ansatz ließ den Client die aktuelle
+  Blickrichtung selbst schätzen/kennen und daraus lokal `turn` (-1/0/1)
+  ableiten (siehe Abschnitt 8.6/8.7 für die Vorgeschichte dieses Bugs).
+  Das funktioniert nur auf einer praktisch latenzfreien Verbindung
+  (localhost) sauber. Über eine reale Verbindung mit spürbarer
+  Latenz entsteht bei diesem "Closed Loop übers Netzwerk" zwangsläufig ein
+  Regelkreis mit Totzeit: Der Client trifft seine Drehentscheidung anhand
+  eines bereits veralteten Winkels, überschießt das Ziel, korrigiert
+  zurück, überschießt erneut - sichtbar als ständiges Schlängeln der
+  Schlange, selbst mit Hysterese oder clientseitigem Dead-Reckoning. Da
+  der Server seinen eigenen, aktuellen Winkel dagegen ohne jede Verzögerung
+  kennt, ist die Entscheidung dort vollständig latenzfrei und damit
+  stabil - der Client muss dem Server nur noch mitteilen, WOHIN er will,
+  nicht mehr WIE er dorthin drehen soll.
 - **Boost-Knopf** (`#touchBoostBtn`, unten rechts, „⚡“): `touchstart`
   setzt `boost = true`, `touchend`/`touchcancel` setzt ihn zurück auf
   `false`. Visuelles Feedback über die CSS-Klasse `.active`.
@@ -498,7 +510,7 @@ Endpoint: `/ws/game` (SockJS, `setAllowedOriginPatterns("*")`).
 | `type` | Felder | Bedeutung |
 |---|---|---|
 | `join` | `slot` (int, aktuell immer 1), `name` (string, optional), `skin` (string, Skin-ID, optional) | Tritt dem Spiel bei, erzeugt eine neue Schlange |
-| `control` | `slot` (int), `turn` (-1\|0\|1), `boost` (bool) | Setzt die aktuelle Steuereingabe für die Schlange dieses Slots |
+| `control` | `slot` (int), **entweder** `turn` (-1\|0\|1) **oder** `angle` (double, Bogenmaß) zusammen mit `boost` (bool) | Setzt die aktuelle Steuereingabe für die Schlange dieses Slots. `turn` = direkte Drehrichtung (Tastatur); `angle` = gewünschte Weltrichtung, die der Server selbst in `turn` auflöst (Touch-Joystick, siehe 4.7) |
 | `leave` | `slot` (int) | Verlässt das Spiel, entfernt die Schlange |
 
 ### 7.2 Server → Client
@@ -692,6 +704,40 @@ Mobil-Steuerung per automatisiertem Playwright-Test (Touch-Controls
 sichtbar/funktional unter iPhone-13-Emulation, unsichtbar unter
 Desktop-Viewport, keine JavaScript-Fehler, Joystick-Drag löst tatsächlich
 `Network.sendControl()`-Aufrufe aus).
+
+### 8.7 Touch-Steuerung schlängelt trotz Hysterese/Dead-Reckoning
+
+Nach 8.6 blieb ein Folgebug: Auf einem echten Mobilgerät (nicht localhost)
+drehte die Schlange beim ruhigen Halten des Joysticks in eine feste
+Richtung sichtbar hin und her, statt gerade zu fahren - trotz des zunächst
+eingebauten Schmitt-Triggers (zwei Dreh-Schwellen statt einer Deadzone)
+und eines client-seitigen "Dead Reckoning" (Vorab-Simulation des eigenen
+Winkels über die seit dem letzten Snapshot verstrichene Zeit). Eine
+Simulation mit künstlich eingefügter Netzwerk-Latenz (siehe Testskript,
+nicht Teil des Repos) zeigte den eigentlichen Grund: Der Client verglich
+seine **eigene geschätzte Blickrichtung** mit der Zielrichtung und sandte
+daraus eine diskrete Dreh-Entscheidung (`turn`) an den Server - ein
+"Closed Loop übers Netzwerk". Jede Schätzung der eigenen Blickrichtung ist
+durch Broadcast-Intervall und Round-Trip-Latenz zwangsläufig veraltet;
+über eine reale Mobilfunkverbindung (einige zig bis über hundert
+Millisekunden Latenz) reicht diese Verzögerung aus, um die Dreh-Entscheidung
+systematisch überschießen zu lassen - das Ergebnis ist ein stabiler
+Regelkreis-Oszillator, keine zufällige Störung, die sich durch mehr
+Hysterese oder bessere Schätzung allein beheben ließe.
+
+**Fix**: Die Drehentscheidung wird nicht mehr im Client getroffen. Der
+Touch-Joystick sendet stattdessen direkt die gewünschte Weltrichtung als
+neues `angle`-Feld der `control`-Nachricht (siehe Abschnitt 7.1). Der
+Server - der seinen eigenen, aktuellen Winkel ohne jede Verzögerung kennt
+- löst daraus jeden Tick lokal den nötigen `turn`-Wert auf
+(`Snake.manualDesiredAngle`, `AiController.staticTurnTowards()`, siehe
+Abschnitt 4.7). Dieser Regelkreis ist vollständig latenzfrei (dieselbe
+Technik, mit der auch die KI ihre Zielrichtung anfährt) und daher stabil,
+unabhängig von der Verbindungsqualität des Spielers. Verifiziert über ein
+WebSocket-Testskript, das künstliche Zusatzlatenz (80 ms) auf jede
+gesendete `control`-Nachricht aufschlug: Der Winkel der Test-Schlange
+konvergierte sauber auf die Zielrichtung (±0.01 rad) und blieb danach
+stabil, ohne zu pendeln.
 
 ## 9. Deployment
 

@@ -165,13 +165,26 @@
      *
      * Der Joystick gibt die GEWÜNSCHTE WELTRICHTUNG vor (Bildschirm- und
      * Weltkoordinaten sind deckungsgleich, da die Kamera nur verschiebt,
-     * nicht rotiert - siehe render.js/worldToScreen). Da der Server aber
-     * weiterhin nur -1/0/1 ("links/geradeaus/rechts drehen") als
-     * Eingabe kennt (wie bei der Tastatur), wird fortlaufend die aktuelle
-     * Blickrichtung der eigenen Schlange (aus den letzten zwei
-     * Körpersegmenten) mit der gewünschten Richtung verglichen und daraus
-     * die nötige Drehrichtung abgeleitet - genau wie der Server das für
-     * die KI-Steuerung tut (siehe AiController.turnTowards).
+     * nicht rotiert - siehe render.js/worldToScreen). Dieser Winkel wird
+     * direkt an den Server geschickt (`Network.sendControlAngle`); der
+     * Server vergleicht ihn jeden Tick mit der tatsächlichen Blickrichtung
+     * der Schlange und leitet daraus die nötige Drehrichtung ab - genau wie
+     * bei der KI-Steuerung (siehe `AiController.staticTurnTowards` /
+     * `GameEngine.tick`).
+     *
+     * Wichtig: Dieser Vergleich passiert bewusst NICHT mehr im Client,
+     * sondern serverseitig. Ein früherer Ansatz ließ den Client die
+     * Drehentscheidung treffen (Vergleich von eigener Blickrichtung und
+     * Zielrichtung, Versand von -1/0/1 wie bei der Tastatur). Das
+     * funktionierte auf localhost, aber über eine echte Mobilfunk-
+     * verbindung mit spürbarer Latenz entsteht bei so einem "Closed Loop
+     * über das Netzwerk" zwangsläufig ein Regelkreis mit Totzeit: Der
+     * Client reagiert auf einen bereits veralteten Winkel, überschießt,
+     * korrigiert zurück, überschießt wieder - sichtbar als ständiges
+     * Schlängeln, selbst mit Hysterese/Dead-Reckoning. Indem der Server
+     * (der seinen eigenen aktuellen Winkel ohne jede Verzögerung kennt) die
+     * Entscheidung trifft, ist der Regelkreis vollständig latenzfrei und
+     * damit stabil.
      */
     function setupTouchControls(state, sendState) {
         // Nur auf echten Touch-Geräten aktiv werden (Feature-Detection analog
@@ -190,68 +203,21 @@
         let joystickTouchId = null;
         let centerX = 0, centerY = 0;
         let desiredAngle = null;
-        let steerTimer = null;
+        let smoothDX = 0, smoothDY = 0; // geglättete Richtung (gegen Finger-Zittern)
+        let sendTimer = null;
 
-        function getMyCurrentAngle() {
-            const last = Renderer.lastState;
-            const id = mySnakeIds[1];
-            if (!last || !id) return null;
-            const snake = last.snakes.find(s => s.id === id);
-            if (!snake) return null;
-            // Bevorzugt den exakten, vom Server mitgesendeten Blickwinkel
-            // (snake.angle) statt ihn aus den ausgedünnten Body-Segmenten zu
-            // schätzen - letzteres war ungenau/verrauscht und führte trotz
-            // Hysterese noch zu sichtbarem Zickzack-Drehen.
-            if (typeof snake.angle === "number") return snake.angle;
-            if (!snake.segments || snake.segments.length < 2) return null;
-            const head = snake.segments[0], neck = snake.segments[1];
-            return Math.atan2(head[1] - neck[1], head[0] - neck[0]);
-        }
-
-        // Schmitt-Trigger-Schwellenwerte statt eines einzelnen Deadzone-Werts:
-        // Verhindert das Hin-und-Her-Zittern, das entsteht, wenn die pro
-        // Korrekturintervall tatsächlich gedrehte Winkelmenge (abhängig von
-        // TURN_RATE_DEG_PER_SEC und der Broadcast-Verzögerung) größer ist als
-        // die Deadzone selbst: Ohne Hysterese überschießt jede Korrektur über
-        // die Deadzone hinaus, wird im nächsten Intervall erkannt und wieder
-        // zurückgedreht -> endloses Pendeln. Mit zwei Schwellen (eng zum
-        // Stoppen, weit zum erneuten Anfahren) bleibt die Schlange ruhig,
-        // sobald sie grob auf Kurs ist.
-        const TURN_STOP_THRESHOLD = 0.08;   // rad - unterhalb dessen wird angehalten
-        const TURN_START_THRESHOLD = 0.28;  // rad - oberhalb dessen wird (wieder) gedreht
-
-        function startSteerLoop() {
-            if (steerTimer) return;
-            steerTimer = setInterval(() => {
+        function startSendLoop() {
+            if (sendTimer) return;
+            sendTimer = setInterval(() => {
                 if (desiredAngle === null) return;
-                const currentAngle = getMyCurrentAngle();
-                if (currentAngle === null) return;
-                let diff = desiredAngle - currentAngle;
-                while (diff > Math.PI) diff -= 2 * Math.PI;
-                while (diff < -Math.PI) diff += 2 * Math.PI;
-                const absDiff = Math.abs(diff);
-                if (state.turn === 0) {
-                    // steht still -> erst ab der weiten Schwelle wieder lenken
-                    if (absDiff >= TURN_START_THRESHOLD) {
-                        state.turn = diff > 0 ? 1 : -1;
-                    }
-                } else {
-                    // dreht bereits -> erst ab der engen Schwelle anhalten,
-                    // bis dahin ggf. Richtung an aktuelle Abweichung anpassen
-                    if (absDiff < TURN_STOP_THRESHOLD) {
-                        state.turn = 0;
-                    } else {
-                        state.turn = diff > 0 ? 1 : -1;
-                    }
-                }
-                sendState();
+                Network.sendControlAngle(1, desiredAngle, state.boost);
             }, 60);
         }
 
-        function stopSteerLoop() {
-            if (steerTimer) {
-                clearInterval(steerTimer);
-                steerTimer = null;
+        function stopSendLoop() {
+            if (sendTimer) {
+                clearInterval(sendTimer);
+                sendTimer = null;
             }
         }
 
@@ -269,11 +235,23 @@
             }
             updateKnob(dx, dy);
             if (dist > deadzone) {
-                desiredAngle = Math.atan2(dy, dx);
+                // Richtung glätten (exponentiell gewichteter gleitender
+                // Durchschnitt über den Einheitsvektor): Ein echter Finger
+                // zittert immer leicht, was bei direkter Übernahme des
+                // Rohwinkels ständig minimal wechselnde desiredAngle-Werte
+                // erzeugt. Die Glättung filtert dieses Zittern heraus, ohne
+                // die eigentliche Lenkrichtung spürbar zu verzögern.
+                const nx = dx / dist, ny = dy / dist;
+                smoothDX += (nx - smoothDX) * 0.3;
+                smoothDY += (ny - smoothDY) * 0.3;
+                desiredAngle = Math.atan2(smoothDY, smoothDX);
+                Network.sendControlAngle(1, desiredAngle, state.boost);
             } else {
                 desiredAngle = null;
+                smoothDX = 0;
+                smoothDY = 0;
                 state.turn = 0;
-                sendState();
+                sendState(); // zurück in den turnInput-Modus (geradeaus)
             }
         }
 
@@ -284,7 +262,7 @@
             centerX = rect.left + rect.width / 2;
             centerY = rect.top + rect.height / 2;
             handleJoystickMove(touch);
-            startSteerLoop();
+            startSendLoop();
             e.preventDefault();
         }, {passive: false});
 
@@ -304,7 +282,7 @@
                     desiredAngle = null;
                     state.turn = 0;
                     sendState();
-                    stopSteerLoop();
+                    stopSendLoop();
                     updateKnob(0, 0);
                 }
             }
@@ -313,17 +291,30 @@
         joystick.addEventListener("touchend", endJoystickTouch);
         joystick.addEventListener("touchcancel", endJoystickTouch);
 
+        // Boost darf den aktuellen Steuermodus nicht verändern: Ist der
+        // Joystick gerade aktiv (Winkel-Modus), muss der boost-Wert über
+        // sendControlAngle mitgeschickt werden, sonst würde sendState() das
+        // manualDesiredAngle auf dem Server zurücksetzen und die Schlange
+        // führe trotz gehaltenem Joystick nur noch geradeaus.
+        function sendBoostState() {
+            if (desiredAngle !== null) {
+                Network.sendControlAngle(1, desiredAngle, state.boost);
+            } else {
+                sendState();
+            }
+        }
+
         boostBtn.addEventListener("touchstart", (e) => {
             state.boost = true;
             boostBtn.classList.add("active");
-            sendState();
+            sendBoostState();
             e.preventDefault();
         }, {passive: false});
 
         function releaseBoost(e) {
             state.boost = false;
             boostBtn.classList.remove("active");
-            sendState();
+            sendBoostState();
             e.preventDefault();
         }
 

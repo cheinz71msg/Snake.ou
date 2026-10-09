@@ -34,6 +34,16 @@ public class Snake {
     /** Gewünschte Drehrichtung: -1 (links), 0 (gerade), 1 (rechts). */
     public volatile int turnInput = 0;
     public volatile boolean boosting = false;
+    /**
+     * Für die Touch-Joystick-Steuerung: Statt eines diskreten turnInput
+     * sendet der Client hier direkt die gewünschte Weltrichtung (Bogenmaß).
+     * Ist dieses Feld gesetzt (nicht null), berechnet {@link GameEngine#tick}
+     * daraus jeden Tick serverseitig (ohne Netzwerk-Latenz, analog zur
+     * KI-Steuerung) den passenden turnInput. Wird von einer Tastatur-
+     * Steuernachricht (reines turn ohne desiredAngle) wieder auf null
+     * gesetzt, um zurück in den direkten turnInput-Modus zu wechseln.
+     */
+    public volatile Double manualDesiredAngle = null;
 
     // --- Pro-Schlange-Zustand für die KI-Steuerung (AiController ist eine
     // geteilte Instanz für alle Computer-Schlangen, daher darf der Zustand

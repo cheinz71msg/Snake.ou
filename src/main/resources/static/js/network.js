@@ -79,12 +79,22 @@ const Network = (() => {
         send({type: "control", slot, turn, boost});
     }
 
+    /**
+     * Für die Touch-Joystick-Steuerung: sendet die gewünschte Weltrichtung
+     * direkt an den Server, statt eines diskreten turn-Werts. Der Server
+     * löst daraus selbst (ohne Netzwerk-Latenz) jeden Tick die nötige
+     * Drehrichtung auf (siehe GameEngine.tick/Snake.manualDesiredAngle).
+     */
+    function sendControlAngle(slot, angle, boost) {
+        send({type: "control", slot, angle, boost});
+    }
+
     function leave(slot) {
         send({type: "leave", slot});
     }
 
     return {
-        connect, join, sendControl, leave,
+        connect, join, sendControl, sendControlAngle, leave,
         set onState(fn) { onState = fn; },
         set onDeath(fn) { onDeath = fn; },
         set onJoined(fn) { onJoined = fn; },

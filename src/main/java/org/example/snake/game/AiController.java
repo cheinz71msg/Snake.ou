@@ -209,6 +209,18 @@ public class AiController {
 
     /** Berechnet -1/0/1, um sich möglichst schnell auf desiredAngle zu drehen. */
     private int turnTowards(double currentAngle, double desiredAngle) {
+        return staticTurnTowards(currentAngle, desiredAngle);
+    }
+
+    /**
+     * Statische Variante derselben Logik, wiederverwendet von
+     * {@link GameEngine#tick(double)} für manuell gesteuerte Schlangen mit
+     * Touch-Joystick (siehe dort): Der Client sendet dort direkt die
+     * gewünschte Weltrichtung statt eines diskreten Turn-Werts, und der
+     * Server löst daraus jeden Tick lokal (ohne Netzwerk-Latenz) die
+     * nötige Drehrichtung auf - genau wie hier für die KI.
+     */
+    public static int staticTurnTowards(double currentAngle, double desiredAngle) {
         double diff = desiredAngle - currentAngle;
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
