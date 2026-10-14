@@ -356,6 +356,17 @@ nicht-nummerierten Kombinations-Fallback ersetzt, siehe Abschnitt 8.8.)
 - Client zeigt Rang 1-3 mit Medaillen-Icons (🥇🥈🥉), Rang 4+ mit
   Nummer. Einträge, die zur eigenen Schlange gehören, werden farblich
   hervorgehoben (grün).
+- **Mobile Verkleinerung**: Auf Touch-Geräten (erkannt über dieselbe
+  Media-Query wie bei der Touch-Steuerung, siehe 4.7:
+  `@media (hover: none), (pointer: coarse)`) nimmt die Bestenliste sonst
+  bis zu ein Viertel der Bildschirmfläche ein. Daher wird `#leaderboard`
+  dort per CSS `transform: scale(var(--leaderboard-mobile-scale))`
+  (Ankerpunkt `transform-origin: top left`, sodass die Position oben
+  links erhalten bleibt) verkleinert. Der Faktor ist **konfigurierbar**
+  über die CSS-Custom-Property `--leaderboard-mobile-scale` im `:root`
+  von `style.css` (Default `0.7` = 70% der Desktop-Größe; `1` = keine
+  Verkleinerung). Auf Desktop/Maus-Geräten greift die Regel nicht, dort
+  bleibt die Bestenliste in Originalgröße.
 
 ### 4.6 Skins
 
@@ -798,6 +809,22 @@ ab; es gibt keine persistent laufenden Audio-Knoten mehr, die aktiv
 gestoppt werden müssten. Verifiziert per Playwright: Spielstart, Aufruf
 von `startMusic()`/`stopMusic()` erzeugt keine Konsolen- oder
 Seitenfehler.
+
+### 8.10 Zu geringer Textkontrast beim Touch-Boost-Button (SonarQube css:S7924)
+
+`.touch-boost-btn` (das „⚡“-Icon der Touch-Steuerung) nutzte helles Text
+(`#eef2ff`) auf dem mittelhellen grünen Button-Hintergrund
+(`rgba(55, 214, 122, 0.25/0.6)`). Rein farblich (unabhängig von der
+Deckkraft, da die Grundfarbe `(55, 214, 122)` selbst mittelhell ist)
+ergibt das nur ein Kontrastverhältnis von ca. 1,7:1 - SonarQube meldet
+das als `css:S7924` ("Text and background colors should have sufficient
+contrast").
+
+**Fix**: Textfarbe auf `#06230f` (dunkles Grün) geändert - dieselbe
+Textfarbe, die `.primary-btn` bereits für hellgrüne Hintergründe nutzt.
+Kontrast steigt dadurch auf ca. 8,8:1 (deutlich über dem WCAG-AA-Richtwert
+von 3:1 für große/grafische Inhalte). Visuell und funktional keine
+Änderung außer der Icon-Farbe.
 
 ## 9. Deployment
 

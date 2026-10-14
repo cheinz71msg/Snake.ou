@@ -2,6 +2,14 @@
     box-sizing: border-box;
 }
 
+:root {
+    /* Verkleinerungsfaktor der Bestenliste auf Mobilgeräten (Touch, siehe
+       @media (hover: none), (pointer: coarse) bei #leaderboard weiter
+       unten). 1 = keine Verkleinerung, 0.7 = 70% der Desktop-Größe.
+       Auf Desktop/Maus-Geräten hat dieser Wert keine Auswirkung. */
+    --leaderboard-mobile-scale: 0.7;
+}
+
 html, body {
     margin: 0;
     padding: 0;
@@ -309,6 +317,19 @@ html, body {
     color: #37d67a;
 }
 
+/* Auf Touch-Geräten (Handy/Tablet) nimmt die Bestenliste sonst zu viel
+   Bildschirmfläche ein - sie wird dort um den konfigurierbaren Faktor
+   --leaderboard-mobile-scale (siehe :root) verkleinert. Desktop/Maus-
+   Geräte (hover: hover + pointer: fine) sind von dieser Regel nicht
+   betroffen. transform-origin: top left verankert die Verkleinerung an
+   der durch #leaderboard vorgegebenen top/left-Position. */
+@media (hover: none), (pointer: coarse) {
+    #leaderboard {
+        transform: scale(var(--leaderboard-mobile-scale));
+        transform-origin: top left;
+    }
+}
+
 .hud {
     top: 206px;
     right: 16px;
@@ -413,7 +434,11 @@ html, body {
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.3);
     background: rgba(55, 214, 122, 0.25);
-    color: #eef2ff;
+    /* Dunkler statt heller Text: Gegen den grünen Button-Hintergrund
+       liefert helles Text (#eef2ff) nur ~1.7:1 Kontrast (css:S7924).
+       #06230f ist dieselbe dunkelgrüne Textfarbe, die auch .primary-btn
+       auf grünem Grund verwendet, und erreicht hier ~8.8:1. */
+    color: #06230f;
     font-size: 28px;
     touch-action: none;
     pointer-events: auto;
